@@ -3,6 +3,7 @@ import { rememberCommand } from './commands/remember.js';
 import { recallCommand } from './commands/recall.js';
 import { prepareCommand } from './commands/prepare.js';
 import { contextCommand } from './commands/context.js';
+import { retainCommand } from './commands/retain.js';
 import {
   readMemories,
   readJSONLStream,
@@ -25,6 +26,8 @@ try {
     await prepareCommand(args);
   } else if (command === 'context') {
     await contextCommand(args);
+  } else if (command === 'retain') {
+    await retainCommand(args);
   } else if (command === 'list') {
     await listMemories();
   } else if (command === 'export') {
@@ -85,6 +88,7 @@ function printHelp() {
 Usage:
   mem-sync remember <content> [--kind kind] [--scope scope] [--tag tag] [...]
   mem-sync recall <query> [--format markdown|json|memories] [--limit n] [...]
+  mem-sync retain --transcript-file <path> --pending --device <id> [--project-id id] [--agent-id id]
   mem-sync context [--mode startup|recall] [--format markdown|json|memories] [--limit n] [--project-id id] [--project path]
   mem-sync list
   mem-sync export
