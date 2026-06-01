@@ -5,6 +5,11 @@ import {
   readJSONLStream,
   resolveStorePath
 } from './file-store.js';
+import {
+  rebuildCommand,
+  statusCommand,
+  updateCommand
+} from './commands/index.js';
 
 const [command, ...args] = process.argv.slice(2);
 
@@ -15,6 +20,8 @@ try {
     await listMemories();
   } else if (command === 'export') {
     await exportMemories();
+  } else if (command === 'index') {
+    handleIndexCommand(args);
   } else {
     printHelp();
     process.exitCode = command ? 1 : 0;
@@ -96,8 +103,23 @@ function requireValue(args, index, flag) {
   return value;
 }
 
+function handleIndexCommand(args) {
+  const [subcommand, ...rest] = args;
+  if (subcommand === 'rebuild') {
+    rebuildCommand();
+  } else if (subcommand === 'status') {
+    statusCommand(rest);
+  } else if (subcommand === 'update') {
+    updateCommand();
+  } else {
+    console.error(`mem-sync: unknown index subcommand: ${subcommand ?? '(none)'}`);
+    console.error('Available: index rebuild | index status | index update');
+    process.exitCode = 1;
+  }
+}
+
 function printHelp() {
-  console.log(`mem-sync\n\nUsage:\n  mem-sync add <text> [--scope name] [--source name]\n  mem-sync list\n  mem-sync export`);
+  console.log(`mem-sync\n\nUsage:\n  mem-sync add <text> [--scope name] [--source name]\n  mem-sync list\n  mem-sync export\n  mem-sync index rebuild\n  mem-sync index status [--format json]\n  mem-sync index update`);
 }
 
 function formatSource(source) {
