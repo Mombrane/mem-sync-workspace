@@ -1,0 +1,215 @@
+import { createHash } from 'node:crypto';
+import { readFileSync, readdirSync, unlinkSync, writeFileSync, mkdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { normalizeContent } from './schema.js';
+
+/**
+ * 构建合并用 canonicalKey。
+ *
+ * canonicalKey 用于确定性去重：scope + kind + 内容哈希。
+ * 内容哈希基于 normalizeContent() 的结果（空白折叠），
+ * 确保同语义、不同格式的内容被识别为同一记录。
+ *
+ * 注意：此 key 格式（scope:kind:contentHash）比 schema.js 中的
+ * createCanonicalKey（kind:scope:projectId:agentId:contentHash）
+ * 更简短，因为合并阶段只关心 scope/kind/内容的唯一性。
+ *
+ * @param {Object} memory - 记忆记录
+ * @returns {string} canonicalKey
+ */
+export function buildCanonicalKey(memory) {
+  const contentHash = createHash('sha256')
+    .update(normalizeContent(memory.content ?? memory.text ?? ''))
+    .digest('hex')
+    .slice(0, 12);
+  return `${memory.scope}:${memory.kind}:${contentHash}`;
+}
+
+/**
+ * 按 canonicalKey 去重合并记录数组。
+ *
+ * 同一 canonicalKey 的记录只保留一条：选择 updatedAt 最新的。
+ * 如果 updatedAt 相同，先前出现在数组中的记录优先（稳定排序）。
+ *
+ * @param {Object[]} records - 记忆记录数组
+ * @returns {Object[]} 去重后的记录数组
+ */
+export function mergeByCanonicalKey(records) {
+  const byKey = new Map();
+
+  for (const record of records) {
+    const key = buildCanonicalKey(record);
+    const existing = byKey.get(key);
+    if (!existing || new Date(record.updatedAt) > new Date(existing.updatedAt)) {
+      byKey.set(key, record);
+    }
+  }
+
+  return [...byKey.values()];
+}
+
+/**
+ * 读取 JSONL 文件（同步版本）。
+ * 返回记录数组。文件不存在时返回空数组。
+ */
+function readJSONLSync(storePath) {
+  const records = [];
+  try {
+    const raw = readFileSync(storePath, 'utf8');
+    for (const line of raw.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        records.push(JSON.parse(trimmed));
+      } catch {
+        // 跳过损坏行
+      }
+    }
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+  }
+  return records;
+}
+
+/**
+ * 从 pending/ 目录读取所有待合并记录。
+ *
+ * 支持两种文件格式：
+ * - .json：JSON 对象或数组，可用作单条记忆或记忆数组
+ * - .jsonl：每行一条 JSON 记录
+ *
+ * 无效/损坏文件静默跳过。
+ *
+ * @param {string} pendingDir - pending 目录路径
+ * @returns {Object[]} 扁平化的记忆记录数组
+ */
+export function readPendingFiles(pendingDir) {
+  const records = [];
+  let entries;
+  try {
+    entries = readdirSync(pendingDir);
+  } catch (err) {
+    if (err.code === 'ENOENT') return records;
+    throw err;
+  }
+
+  for (const entry of entries) {
+    const filePath = join(pendingDir, entry);
+
+    if (entry.endsWith('.jsonl')) {
+      try {
+        const raw = readFileSync(filePath, 'utf8');
+        for (const line of raw.split('\n')) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          try {
+            records.push(JSON.parse(trimmed));
+          } catch {
+            // 跳过损坏行
+          }
+        }
+      } catch {
+        // 跳过无法读取的文件
+      }
+    } else if (entry.endsWith('.json')) {
+      try {
+        const raw = readFileSync(filePath, 'utf8');
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          records.push(...parsed);
+        } else {
+          records.push(parsed);
+        }
+      } catch {
+        // 跳过无效 JSON 文件
+      }
+    }
+    // 忽略非 .json/.jsonl 文件
+  }
+
+  return records;
+}
+
+/**
+ * 将 pending/ 目录中的待合并记录合并到 JSONL 存储。
+ *
+ * 合并流程：
+ * 1. 读取所有 pending 文件为扁平化记录数组
+ * 2. 读取现有 JSONL 存储记录
+ * 3. 合并两批记录（pending + existing）
+ * 4. 按 canonicalKey 去重（latest updatedAt 胜出）
+ * 5. 写回 JSONL
+ * 6. 移除所有已合并的 pending 文件
+ *
+ * 如果 pending 目录不存在或为空，返回零统计。
+ *
+ * @param {string} pendingDir - pending 目录路径
+ * @param {string} storePath - JSONL 存储文件路径
+ * @returns {{ pending: number, merged: number, total: number }}
+ * @throws {Error} 写入 JSONL 失败时抛出致命错误
+ */
+export function mergePendingToStore(pendingDir, storePath) {
+  // 读取 pending 记录
+  const pendingRecords = readPendingFiles(pendingDir);
+  const pending = pendingRecords.length;
+
+  // 读取现有 JSONL 记录
+  const existingRecords = readJSONLSync(storePath);
+
+  if (pending === 0) {
+    return {
+      pending: 0,
+      merged: 0,
+      total: existingRecords.length
+    };
+  }
+
+  // 收集 pending records 的 canonicalKeys（去重）
+  const pendingKeys = new Set(pendingRecords.map(r => buildCanonicalKey(r)));
+
+  // 合并所有记录并去重
+  const allRecords = [...existingRecords, ...pendingRecords];
+  const merged = mergeByCanonicalKey(allRecords);
+
+  // 计算实际合并数量：pending 中有多少 canonicalKey 出现在最终结果中
+  const mergedKeys = new Set(merged.map(r => buildCanonicalKey(r)));
+  let mergedCount = 0;
+  for (const key of pendingKeys) {
+    if (mergedKeys.has(key)) {
+      mergedCount += 1;
+    }
+  }
+
+  // 写入合并后的记录到 JSONL
+  try {
+    mkdirSync(dirname(storePath), { recursive: true });
+    const content = merged.map(r => JSON.stringify(r)).join('\n') + '\n';
+    writeFileSync(storePath, content, 'utf8');
+  } catch (err) {
+    throw new Error(
+      `Failed to write merged records to ${storePath}: ${err.message}`
+    );
+  }
+
+  // 移除已合并的 pending 文件
+  try {
+    const entries = readdirSync(pendingDir);
+    for (const entry of entries) {
+      if (entry.endsWith('.json') || entry.endsWith('.jsonl')) {
+        try {
+          unlinkSync(join(pendingDir, entry));
+        } catch {
+          // 无法删除个别文件不阻塞流程
+        }
+      }
+    }
+  } catch {
+    // pending 目录可能在合并过程中被移除，忽略
+  }
+
+  return {
+    pending,
+    merged: mergedCount,
+    total: merged.length
+  };
+}

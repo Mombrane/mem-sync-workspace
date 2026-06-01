@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { rememberCommand } from './commands/remember.js';
 import { recallCommand } from './commands/recall.js';
+import { prepareCommand } from './commands/prepare.js';
 import {
   readMemories,
   readJSONLStream,
@@ -19,6 +20,8 @@ try {
     await rememberCommand(args);
   } else if (command === 'recall') {
     await recallCommand(args);
+  } else if (command === 'prepare') {
+    await prepareCommand(args);
   } else if (command === 'list') {
     await listMemories();
   } else if (command === 'export') {
