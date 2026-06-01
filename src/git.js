@@ -180,6 +180,48 @@ export function rebaseAbort(cwd) {
 }
 
 /**
+ * 暂存指定文件到 Git 暂存区。
+ *
+ * @param {string} cwd - 工作目录（Git 仓库路径）
+ * @param {string} filePath - 相对于 cwd 的文件路径
+ */
+export function stageFile(cwd, filePath) {
+  execGit(`add "${filePath}"`, cwd);
+}
+
+/**
+ * 提交暂存区变更。
+ *
+ * 执行 git commit 后，通过 rev-parse --short HEAD 获取短提交哈希并返回。
+ *
+ * @param {string} cwd - 工作目录（Git 仓库路径）
+ * @param {string} message - 提交信息
+ * @returns {string} 短提交哈希（7 位字符）
+ */
+export function commit(cwd, message) {
+  execGit(`commit -m "${message}"`, cwd);
+  return execGit('rev-parse --short HEAD', cwd).trim();
+}
+
+/**
+ * 推送到远程 origin main 分支。
+ *
+ * 网络错误被捕获为非致命——push 失败时返回 false，
+ * 不抛出异常，确保调用方流程不被中断。
+ *
+ * @param {string} cwd - 工作目录（Git 仓库路径）
+ * @returns {boolean} true 表示推送成功，false 表示失败
+ */
+export function push(cwd) {
+  try {
+    execGit('push origin main', cwd);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * 确保 Git 仓库存在。
  *
  * 如果目录不存在或不包含 .git，则从远端克隆或初始化为空仓库。
