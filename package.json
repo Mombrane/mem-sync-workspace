@@ -1,0 +1,17 @@
+{
+  "name": "mem-sync",
+  "version": "0.1.0",
+  "description": "GitHub-backed multi-platform memory sync toolkit.",
+  "type": "module",
+  "bin": {
+    "mem-sync": "./src/cli.js"
+  },
+  "scripts": {
+    "test": "node --test",
+    "start": "node ./src/cli.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}

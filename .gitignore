@@ -1,0 +1,4 @@
+node_modules/
+.mem-sync/
+coverage/
+.DS_Store
