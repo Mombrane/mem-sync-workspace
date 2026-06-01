@@ -422,18 +422,52 @@ export function getIndexStatus(cacheDir) {
 /**
  * FTS5 全文搜索：使用 BM25 排序返回匹配记录。
  *
- * 参数：
- * - cacheDir: 索引数据库缓存目录
- * - query: FTS5 查询字符串（支持 AND/OR/NOT 布尔操作，
- *   短语用双引号包裹，前缀用 * 通配符）
- * - limit: 最大返回条数（默认 20）
+ * ## 新签名（推荐）
  *
- * 返回 Schema v1 格式的记录数组，按 BM25 相关性降序排列。
- * BM25 排名通过 FTS5 的 rank 列获取，数值越小相关性越高。
+ * @param {string} cacheDir - 索引数据库缓存目录
+ * @param {object} options - 搜索选项对象
+ * @param {string} options.query - 必填 — FTS5 查询字符串
+ * @param {number} [options.limit=20] - 最大返回条数
+ * @param {string} [options.scope] - 按 scope 枚举值过滤
+ * @param {string} [options.kind] - 按 kind 枚举值过滤
+ * @param {string[]} [options.tags] - 按标签过滤（AND 语义，JS 后过滤）
+ * @param {string} [options.projectId] - 按 project_id 过滤
+ * @param {string} [options.agentId] - 按 agent_id 过滤
+ * @param {number} [options.minConfidence=0] - 最小置信度阈值（0–1）
+ * @param {number} [options.minImportance=0] - 最小重要性阈值（0–1）
+ * @param {string} [options.veracity] - 按 veracity 枚举值过滤
+ * @param {boolean} [options.excludeDeleted=true] - 是否排除已删除记录
+ * @param {boolean} [options.excludeExpired=true] - 是否排除已过期记录
+ * @returns {object[]} Schema v1 格式的记录数组，按 BM25 相关性降序排列
  *
- * 索引不存在时返回空数组，不抛出异常。
+ * ## 旧签名（已弃用，向后兼容）
+ *
+ * @deprecated 自 v0.2 起。请使用 options 对象形式。
+ * 仍接受 `searchIndex(cacheDir, query: string, limit?: number)`，
+ * 并调用新的 options 对象形式。
  */
-export function searchIndex(cacheDir, query, limit) {
+export function searchIndex(cacheDir, optionsOrQuery, legacyLimit) {
+  // 向后兼容检测：如果第二个参数是字符串，则是旧的 (cacheDir, query, limit) 签名。
+  // 将旧参数包装为新的 options 对象形状。
+  const options = typeof optionsOrQuery === 'string'
+    ? { query: optionsOrQuery, limit: legacyLimit }
+    : optionsOrQuery;
+
+  const {
+    query,
+    limit,
+    scope,
+    kind,
+    tags,
+    projectId,
+    agentId,
+    minConfidence,
+    minImportance,
+    veracity,
+    excludeDeleted,
+    excludeExpired
+  } = options;
+
   const effectiveLimit = limit ?? 20;
   const dbPath = resolveDbPath(cacheDir);
 
@@ -458,9 +492,28 @@ export function searchIndex(cacheDir, query, limit) {
       return [];
     }
 
+    // 动态构建 SQL WHERE 子句：仅当对应选项提供时才添加过滤条件。
+    // 使用 @param IS NULL OR column = @param 模式，
+    // 使 SQLite 在参数为 NULL 时跳过该条件。
+    // SQL 拼接使用三元条件将固定过滤合并到同一条语句中。
+
+    // 构建排除已删除/已过期记录的子句：
+    // - excludeDeleted: 默认 true（使用 AND deleted_at IS NULL）
+    // - excludeExpired: 默认 true（使用 AND (valid_until IS NULL OR valid_until >= @nowIso)）
+    const excludeDeletedClause = (excludeDeleted !== false)
+      ? 'AND m.deleted_at IS NULL'
+      : '';
+    const excludeExpiredClause = (excludeExpired !== false)
+      ? 'AND (m.valid_until IS NULL OR m.valid_until >= @nowIso)'
+      : '';
+
+    // 当前 UTC 时间，用于过期检查
+    const nowIso = new Date().toISOString();
+
     // FTS5 MATCH 查询使用 BM25 排序：
     // - JOIN memories_fts ON memories.rowid = memories_fts.rowid 建立关联
     // - WHERE memories_fts MATCH @query 执行全文匹配
+    // - 结构化过滤条件仅在选项提供时激活（@param IS NULL OR ... 模式）
     // - ORDER BY rank 按 BM25 相关性降序（rank 值越小越相关）
     // - LIMIT 限制返回数量，避免结果集过大
     const rows = db.prepare(`
@@ -468,11 +521,42 @@ export function searchIndex(cacheDir, query, limit) {
       FROM memories_fts f
       JOIN memories m ON m.rowid = f.rowid
       WHERE memories_fts MATCH @query
+        AND (@scope IS NULL OR m.scope = @scope)
+        AND (@kind IS NULL OR m.kind = @kind)
+        AND (@projectId IS NULL OR m.project_id = @projectId)
+        AND (@agentId IS NULL OR m.agent_id = @agentId)
+        AND (@veracity IS NULL OR m.veracity = @veracity)
+        AND m.confidence >= @minConfidence
+        AND m.importance >= @minImportance
+        ${excludeDeletedClause}
+        ${excludeExpiredClause}
       ORDER BY rank
       LIMIT @effectiveLimit
-    `).all({ query, effectiveLimit });
+    `).all({
+      query,
+      scope: scope ?? null,
+      kind: kind ?? null,
+      projectId: projectId ?? null,
+      agentId: agentId ?? null,
+      veracity: veracity ?? null,
+      minConfidence: minConfidence ?? 0,
+      minImportance: minImportance ?? 0,
+      nowIso,
+      effectiveLimit
+    });
 
-    results = rows.map(mapRowToRecord);
+    results = rows.map(row => {
+      const record = mapRowToRecord(row);
+      // 附加 FTS5 BM25 排名到记录（用于 recall 输出格式化）
+      record._rank = row.rank;
+      return record;
+    });
+
+    // 标签后过滤（AND 语义）：在 JS 中过滤，避免依赖 SQLite JSON1 扩展。
+    // FTS + SQL 过滤后的结果集很小（≤ effectiveLimit），JS 过滤开销可忽略。
+    if (tags && tags.length > 0) {
+      results = results.filter(r => tags.every(t => r.tags.includes(t)));
+    }
   } catch (error) {
     // FTS5 查询语法错误或表不存在时返回空结果，
     // 不中断调用方流程

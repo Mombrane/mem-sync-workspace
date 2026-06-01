@@ -7,28 +7,26 @@ import { spawnSync } from 'node:child_process';
 
 const CLI_PATH = new URL('../src/cli.js', import.meta.url).pathname;
 
-test('add emits schema diagnostics to stderr and export remains JSON-only', async () => {
+test('remember emits schema diagnostics to stderr and export remains JSON-only', async () => {
   const memSyncHome = await mkdtemp(join(tmpdir(), 'mem-sync-cli-'));
 
   try {
-    const addResult = spawnSync(process.execPath, [
+    const rememberResult = spawnSync(process.execPath, [
       CLI_PATH,
-      'add',
+      'remember',
       '用户偏好简洁中文回答。',
       '--scope',
-      'user',
-      '--source',
-      'codex'
+      'user'
     ], {
       env: { ...process.env, MEM_SYNC_HOME: memSyncHome },
       encoding: 'utf8'
     });
 
-    assert.equal(addResult.status, 0);
-    assert.match(addResult.stderr, /\[mem-sync:schema\] normalize:start/);
-    assert.match(addResult.stderr, /\[mem-sync:schema\] validate:ok/);
-    assert.match(addResult.stderr, /\[mem-sync:store\] memory:accepted/);
-    assert.match(addResult.stdout, /Added mem_/);
+    assert.equal(rememberResult.status, 0);
+    assert.match(rememberResult.stderr, /\[mem-sync:schema\] normalize:start/);
+    assert.match(rememberResult.stderr, /\[mem-sync:schema\] validate:ok/);
+    assert.match(rememberResult.stderr, /\[mem-sync:store\] memory:accepted/);
+    assert.match(rememberResult.stdout, /mem_/);
 
     const listResult = spawnSync(process.execPath, [CLI_PATH, 'list'], {
       env: { ...process.env, MEM_SYNC_HOME: memSyncHome },
@@ -37,7 +35,7 @@ test('add emits schema diagnostics to stderr and export remains JSON-only', asyn
 
     assert.equal(listResult.status, 0);
     assert.equal(listResult.stderr, '');
-    assert.match(listResult.stdout, /\tuser\tcodex\t用户偏好简洁中文回答。/);
+    assert.match(listResult.stdout, /\tuser\tmanual\t用户偏好简洁中文回答。/);
     assert.doesNotMatch(listResult.stdout, /undefined|\[object Object\]/);
 
     const exportResult = spawnSync(process.execPath, [CLI_PATH, 'export'], {

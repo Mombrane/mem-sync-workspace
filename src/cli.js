@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { createMemoryStore } from './memory-store.js';
+import { rememberCommand } from './commands/remember.js';
+import { recallCommand } from './commands/recall.js';
 import {
   readMemories,
   readJSONLStream,
@@ -14,8 +15,10 @@ import {
 const [command, ...args] = process.argv.slice(2);
 
 try {
-  if (command === 'add') {
-    await addMemory(args);
+  if (command === 'remember') {
+    await rememberCommand(args);
+  } else if (command === 'recall') {
+    await recallCommand(args);
   } else if (command === 'list') {
     await listMemories();
   } else if (command === 'export') {
@@ -29,26 +32,6 @@ try {
 } catch (error) {
   console.error(`mem-sync: ${error.message}`);
   process.exitCode = 1;
-}
-
-/**
- * add 命令：JSONL 追加模式
- *
- * JSONL 追加写入的核心优势：
- * - 不需要全量读取 → 合并 → 覆盖写入
- * - 直接将新记录追加到文件末尾，O(1) 写入
- * - 后续 Git 同步时 diff 只显示新增行
- * - 重复记录由读取时 mergeMemorySets 去重处理
- *
- * store.add() 内部已处理 appendJSONL 持久化，
- * CLI 层无需再单独调用存储 API。
- */
-async function addMemory(args) {
-  const { text, options } = parseAddArgs(args);
-  const store = createMemoryStore({ logger: (message) => console.error(message) });
-  const memory = await store.add(text, options);
-
-  console.log(`Added ${memory.id} to ${resolveStorePath()}`);
 }
 
 /**
@@ -75,34 +58,6 @@ async function exportMemories() {
   console.log(JSON.stringify({ memories }, null, 2));
 }
 
-function parseAddArgs(args) {
-  const textParts = [];
-  const options = {};
-
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === '--scope') {
-      options.scope = requireValue(args, index, '--scope');
-      index += 1;
-    } else if (arg === '--source') {
-      options.source = requireValue(args, index, '--source');
-      index += 1;
-    } else {
-      textParts.push(arg);
-    }
-  }
-
-  return { text: textParts.join(' '), options };
-}
-
-function requireValue(args, index, flag) {
-  const value = args[index + 1];
-  if (!value || value.startsWith('--')) {
-    throw new Error(`${flag} requires a value.`);
-  }
-  return value;
-}
-
 function handleIndexCommand(args) {
   const [subcommand, ...rest] = args;
   if (subcommand === 'rebuild') {
@@ -119,7 +74,16 @@ function handleIndexCommand(args) {
 }
 
 function printHelp() {
-  console.log(`mem-sync\n\nUsage:\n  mem-sync add <text> [--scope name] [--source name]\n  mem-sync list\n  mem-sync export\n  mem-sync index rebuild\n  mem-sync index status [--format json]\n  mem-sync index update`);
+  console.log(`mem-sync
+
+Usage:
+  mem-sync remember <content> [--kind kind] [--scope scope] [--tag tag] [...]
+  mem-sync recall <query> [--format markdown|json|memories] [--limit n] [...]
+  mem-sync list
+  mem-sync export
+  mem-sync index rebuild
+  mem-sync index status [--format json]
+  mem-sync index update`);
 }
 
 function formatSource(source) {

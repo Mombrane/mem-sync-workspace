@@ -321,8 +321,297 @@ test('searchIndex respects the limit parameter', async () => {
     await writeJSONLFile(repoDir, 'memories.jsonl', records);
     rebuildIndex(repoDir, cacheDir, { repoHead: 'limit-test' });
 
-    const results = searchIndex(cacheDir, '搜索关键词', { limit: 3 });
+    const results = searchIndex(cacheDir, { query: '搜索关键词', limit: 3 });
     assert.ok(results.length <= 3, `expected <= 3 results, got ${results.length}`);
+    assert.ok(results.length > 0, 'should return at least 1 result with limit');
+  } finally {
+    await rm(repoDir, { recursive: true, force: true });
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+// ─── searchIndex 选项对象（新 API）─────────────────────────────────────
+
+test('searchIndex with options object { query, limit } returns results', async () => {
+  const repoDir = await tempDir('search-opts');
+  const cacheDir = await tempDir('search-opts-cache');
+
+  try {
+    const records = [
+      makeRecord({ id: 'mem_a', content: 'Python 是常用的脚本语言。', kind: 'preference', scope: 'user' }),
+      makeRecord({ id: 'mem_b', content: 'JavaScript 用于前端开发。', kind: 'project_fact', scope: 'project' }),
+      makeRecord({ id: 'mem_c', content: 'Rust 性能优异适合系统编程。', kind: 'decision', scope: 'project' })
+    ];
+    await writeJSONLFile(repoDir, 'memories.jsonl', records);
+    rebuildIndex(repoDir, cacheDir, { repoHead: 'opts-test' });
+
+    const results = searchIndex(cacheDir, { query: 'Python', limit: 2 });
+    assert.ok(results.length > 0, 'should find results');
+    assert.ok(results.length <= 2, 'should respect limit');
+  } finally {
+    await rm(repoDir, { recursive: true, force: true });
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test('searchIndex filters by scope', async () => {
+  const repoDir = await tempDir('search-scope');
+  const cacheDir = await tempDir('search-scope-cache');
+
+  try {
+    const records = [
+      makeRecord({ id: 'mem_a', content: 'python testing framework preferences', scope: 'user' }),
+      makeRecord({ id: 'mem_b', content: 'javascript frontend development tools', scope: 'project' })
+    ];
+    await writeJSONLFile(repoDir, 'memories.jsonl', records);
+    rebuildIndex(repoDir, cacheDir, { repoHead: 'scope-test' });
+
+    const results = searchIndex(cacheDir, { query: 'javascript development', scope: 'user' });
+    assert.equal(results.length, 0, 'should not find user-scope record about javascript');
+
+    const results2 = searchIndex(cacheDir, { query: 'javascript development', scope: 'project' });
+    assert.equal(results2.length, 1, 'should find project-scope record');
+    assert.equal(results2[0].id, 'mem_b');
+  } finally {
+    await rm(repoDir, { recursive: true, force: true });
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test('searchIndex filters by kind', async () => {
+  const repoDir = await tempDir('search-kind');
+  const cacheDir = await tempDir('search-kind-cache');
+
+  try {
+    const records = [
+      makeRecord({ id: 'mem_a', content: '用户偏好使用暗色主题。', kind: 'preference' }),
+      makeRecord({ id: 'mem_b', content: '决定使用 TypeScript。', kind: 'decision' })
+    ];
+    await writeJSONLFile(repoDir, 'memories.jsonl', records);
+    rebuildIndex(repoDir, cacheDir, { repoHead: 'kind-test' });
+
+    const results = searchIndex(cacheDir, { query: 'TypeScript', kind: 'preference' });
+    assert.equal(results.length, 0, 'should not find preference record about TypeScript');
+
+    const results2 = searchIndex(cacheDir, { query: 'TypeScript', kind: 'decision' });
+    assert.equal(results2.length, 1, 'should find decision record');
+    assert.equal(results2[0].id, 'mem_b');
+  } finally {
+    await rm(repoDir, { recursive: true, force: true });
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test('searchIndex applies minConfidence threshold', async () => {
+  const repoDir = await tempDir('search-conf');
+  const cacheDir = await tempDir('search-conf-cache');
+
+  try {
+    const records = [
+      makeRecord({ id: 'mem_a', content: 'high confidence decision record', confidence: 0.9 }),
+      makeRecord({ id: 'mem_b', content: 'low confidence inference record', confidence: 0.3 })
+    ];
+    await writeJSONLFile(repoDir, 'memories.jsonl', records);
+    rebuildIndex(repoDir, cacheDir, { repoHead: 'conf-test' });
+
+    const results = searchIndex(cacheDir, { query: 'confidence record', minConfidence: 0.8 });
+    assert.equal(results.length, 1, 'should only find high-confidence record');
+    assert.equal(results[0].id, 'mem_a');
+  } finally {
+    await rm(repoDir, { recursive: true, force: true });
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test('searchIndex post-filters by single tag', async () => {
+  const repoDir = await tempDir('search-tag1');
+  const cacheDir = await tempDir('search-tag1-cache');
+
+  try {
+    const records = [
+      makeRecord({ id: 'mem_a', content: 'Python 测试框架偏好设置。', tags: ['python', 'testing'] }),
+      makeRecord({ id: 'mem_b', content: 'Rust 内存安全特性分析。', tags: ['rust', 'systems'] })
+    ];
+    await writeJSONLFile(repoDir, 'memories.jsonl', records);
+    rebuildIndex(repoDir, cacheDir, { repoHead: 'tag1-test' });
+
+    const results = searchIndex(cacheDir, { query: '测试框架', tags: ['python'] });
+    assert.equal(results.length, 1, 'should find record with python tag');
+    assert.equal(results[0].id, 'mem_a');
+  } finally {
+    await rm(repoDir, { recursive: true, force: true });
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test('searchIndex post-filters by multiple tags with AND semantics', async () => {
+  const repoDir = await tempDir('search-tag2');
+  const cacheDir = await tempDir('search-tag2-cache');
+
+  try {
+    const records = [
+      makeRecord({ id: 'mem_a', content: 'Python 测试框架偏好。', tags: ['python', 'testing'] }),
+      makeRecord({ id: 'mem_b', content: 'Python 数据分析工具。', tags: ['python', 'data'] }),
+      makeRecord({ id: 'mem_c', content: 'Rust 系统编程语言。', tags: ['rust', 'systems'] })
+    ];
+    await writeJSONLFile(repoDir, 'memories.jsonl', records);
+    rebuildIndex(repoDir, cacheDir, { repoHead: 'tag2-test' });
+
+    // 同时要求 python 和 testing 标签
+    const results = searchIndex(cacheDir, { query: 'Python OR 工具 OR 编程', tags: ['python', 'testing'] });
+    assert.equal(results.length, 1, 'should find only record with both python AND testing');
+    assert.equal(results[0].id, 'mem_a');
+  } finally {
+    await rm(repoDir, { recursive: true, force: true });
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test('searchIndex with excludeDeleted:false includes soft-deleted records', async () => {
+  const repoDir = await tempDir('search-delshow');
+  const cacheDir = await tempDir('search-delshow-cache');
+
+  try {
+    // 直接构造带 deletedAt 的记录，绕过 shouldSkipRecord 在 rebuildIndex 中的过滤
+    const records = [
+      makeRecord({ id: 'mem_a', content: '活跃记录。' }),
+      makeRecord({
+        id: 'mem_b',
+        content: '已删除但应可见。',
+        deletedAt: '2026-06-02T00:00:00.000Z'
+      })
+    ];
+    await writeJSONLFile(repoDir, 'memories.jsonl', records);
+    rebuildIndex(repoDir, cacheDir, { repoHead: 'delshow-test' });
+
+    // 默认应排除已删除记录（rebuildIndex 已跳过，此处验证 searchIndex 的 SQL 层也排除）
+    // 因为 rebuildIndex 跳过了已删除记录，所以数据库中只有 mem_a
+    const resultsDefault = searchIndex(cacheDir, { query: '已删除但应可见' });
+    assert.equal(resultsDefault.length, 0, 'deleted record should not be indexed by rebuildIndex');
+
+    // 验证活跃记录存在
+    const resultsActive = searchIndex(cacheDir, { query: '活跃记录' });
+    assert.equal(resultsActive.length, 1);
+    assert.equal(resultsActive[0].id, 'mem_a');
+
+    // 手动插入已删除记录到数据库以测试 SQL 层过滤
+    const { join } = await import('node:path');
+    const dbPath = join(cacheDir, 'index.sqlite');
+    const Database = (await import('better-sqlite3')).default;
+    const db = new Database(dbPath);
+    db.pragma('journal_mode=WAL');
+    try {
+      db.prepare(`
+        INSERT INTO memories (id, kind, scope, content, summary, source_json, evidence_json,
+          confidence, importance, veracity, tags_json, created_at, updated_at, deleted_at,
+          supersedes_json, file_path, line_no, repo_commit)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        'mem_b', 'episode', 'global', '已删除但应可见。', '已删除但应可见。',
+        '{}', '[]', 1.0, 0.5, 'stated', '[]',
+        '2026-06-02T00:00:00.000Z', '2026-06-02T00:00:00.000Z', '2026-06-02T00:00:00.000Z',
+        '[]', 'test.jsonl', 1, 'delshow-test'
+      );
+      db.exec("INSERT INTO memories_fts(memories_fts) VALUES('rebuild');");
+    } finally {
+      db.close();
+    }
+
+    // 默认排除已删除：不应返回 mem_b
+    const defaultResults = searchIndex(cacheDir, { query: '已删除但应可见' });
+    assert.equal(defaultResults.length, 0, 'deleted record excluded by default in SQL layer');
+
+    // excludeDeleted:false 应包含已删除
+    const includeDeletedResults = searchIndex(cacheDir, { query: '已删除但应可见', excludeDeleted: false });
+    assert.equal(includeDeletedResults.length, 1, 'deleted record included when excludeDeleted=false');
+    assert.equal(includeDeletedResults[0].id, 'mem_b');
+  } finally {
+    await rm(repoDir, { recursive: true, force: true });
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test('searchIndex with excludeExpired:false includes expired records', async () => {
+  const repoDir = await tempDir('search-expshow');
+  const cacheDir = await tempDir('search-expshow-cache');
+
+  try {
+    // 手动插入已过期记录到数据库
+    const { join } = await import('node:path');
+    const dbPath = join(cacheDir, 'index.sqlite');
+    const Database = (await import('better-sqlite3')).default;
+
+    // 先创建索引
+    createIndexDatabase(cacheDir);
+    const db = new Database(dbPath);
+    db.pragma('journal_mode=WAL');
+    try {
+      db.prepare(`
+        INSERT INTO memories (id, kind, scope, content, summary, source_json, evidence_json,
+          confidence, importance, veracity, tags_json, created_at, updated_at, valid_until,
+          supersedes_json, file_path, line_no, repo_commit)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        'mem_exp', 'episode', 'global', '已过期的记忆内容。', '已过期的记忆内容。',
+        '{}', '[]', 1.0, 0.5, 'stated', '[]',
+        '2020-01-01T00:00:00.000Z', '2020-01-01T00:00:00.000Z', '2020-01-01T00:00:00.000Z',
+        '[]', 'test.jsonl', 1, 'expshow-test'
+      );
+      db.exec("INSERT INTO memories_fts(memories_fts) VALUES('rebuild');");
+    } finally {
+      db.close();
+    }
+
+    // 默认排除已过期
+    const defaultResults = searchIndex(cacheDir, { query: '已过期的记忆内容' });
+    assert.equal(defaultResults.length, 0, 'expired record excluded by default');
+
+    // excludeExpired:false 应包含已过期
+    const includeExpiredResults = searchIndex(cacheDir, { query: '已过期的记忆内容', excludeExpired: false });
+    assert.equal(includeExpiredResults.length, 1, 'expired record included when excludeExpired=false');
+    assert.equal(includeExpiredResults[0].id, 'mem_exp');
+  } finally {
+    await rm(repoDir, { recursive: true, force: true });
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test('searchIndex backward compat: string as second argument', async () => {
+  const repoDir = await tempDir('search-bc1');
+  const cacheDir = await tempDir('search-bc1-cache');
+
+  try {
+    const records = [
+      makeRecord({ id: 'mem_a', content: 'Python 是常用的脚本语言。' })
+    ];
+    await writeJSONLFile(repoDir, 'memories.jsonl', records);
+    rebuildIndex(repoDir, cacheDir, { repoHead: 'bc1-test' });
+
+    // 旧签名：searchIndex(cacheDir, query: string)
+    const results = searchIndex(cacheDir, 'Python 脚本');
+    assert.ok(results.length > 0, 'should work with legacy string second arg');
+    assert.ok(results.some(r => r.id === 'mem_a'));
+  } finally {
+    await rm(repoDir, { recursive: true, force: true });
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test('searchIndex backward compat: string + limit as second and third args', async () => {
+  const repoDir = await tempDir('search-bc2');
+  const cacheDir = await tempDir('search-bc2-cache');
+
+  try {
+    const records = Array.from({ length: 10 }, (_, i) =>
+      makeRecord({ id: `mem_${String(i).padStart(3, '0')}`, content: `测试记忆 ${i} 包含搜索关键词。` })
+    );
+    await writeJSONLFile(repoDir, 'memories.jsonl', records);
+    rebuildIndex(repoDir, cacheDir, { repoHead: 'bc2-test' });
+
+    // 旧签名：searchIndex(cacheDir, query: string, limit: number)
+    const results = searchIndex(cacheDir, '搜索关键词', 5);
+    assert.ok(results.length <= 5, `expected <= 5 results, got ${results.length}`);
+    assert.ok(results.length > 0, 'should return at least 1 result');
   } finally {
     await rm(repoDir, { recursive: true, force: true });
     await rm(cacheDir, { recursive: true, force: true });
