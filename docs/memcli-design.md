@@ -1,8 +1,10 @@
-# memcli 记忆系统详细设计
+# mem-sync CLI 记忆系统详细设计
+
+> Naming note: older notes may refer to this tool as `memcli`; the package and executable name are `mem-sync`.
 
 ## 1. 设计目标
 
-`memcli` 是一个 GitHub-backed 的跨设备 agent 记忆 CLI。它参考 Oh My Pi 的本地记忆模式，但把记忆的 source of truth 从本机 SQLite/文档扩展为一个可同步、可审计、可合并的 Git 仓库。
+`mem-sync` 是一个 GitHub-backed 的跨设备 agent 记忆 CLI。它参考 Oh My Pi 的本地记忆模式，但把记忆的 source of truth 从本机 SQLite/文档扩展为一个可同步、可审计、可合并的 Git 仓库。
 
 核心目标：
 
@@ -142,11 +144,23 @@ memory-repo/
 
 ## 6. 结构化记忆 Schema
 
+Memory Schema v1 是后续 JSONL source of truth 的标准记录形态。当前 Iteration 1.1 只定义 schema、默认值、校验、稳定 ID 和 canonical key；JSONL 文件迁移、Git 同步和索引构建在后续迭代完成。
+
+设计约束：
+
+- schema 模块必须保持依赖轻量，不引入第三方校验库。
+- 纯 schema 函数不直接写日志，避免污染测试和批处理流程。
+- CLI / store 等边界层需要在关键节点输出诊断日志，例如 normalize start、validate ok/error、memory accepted。
+- 诊断日志必须与机器可读输出隔离，尤其不能写入 `export` 的 JSON stdout。
+- schema 相关实现代码需要包含详细中文注释，解释字段意图、默认值、canonical key、生命周期字段和校验分支。
+
 每条记忆建议使用 JSONL，一行一个对象。
 
 ```json
 {
+  "schemaVersion": 1,
   "id": "mem_01J...",
+  "canonicalKey": "preference:user::codex:hash...",
   "kind": "preference",
   "scope": "user",
   "projectId": null,
@@ -180,14 +194,29 @@ memory-repo/
 
 字段说明：
 
+- `schemaVersion`：记录格式版本，v1 固定为 `1`。
+- `id`：稳定记录 ID，用于持久化、引用和合并。
+- `canonicalKey`：由 `kind`、`scope`、可选项目/agent 身份和规范化内容 hash 生成，用于去重和后续冲突分析。
 - `kind`：`preference | identity | project_fact | decision | workflow | correction | warning | episode`。
 - `scope`：`user | project | agent | global | local-only`。
+- `content`：规范化后的记忆正文，是 v1 的 canonical text 字段。
+- `summary`：默认取规范化内容前 120 个字符，可由调用方显式覆盖。
+- `source`：来源对象；手动写入默认 `{ "type": "manual" }`。
 - `veracity`：`stated | inferred | tool | imported | unknown`。
-- `confidence`：记忆可信度。
-- `importance`：召回优先级。
+- `confidence`：记忆可信度，合法范围为 `0..1`；手动 stated 记忆默认 `1`，其他来源默认 `0.5`。
+- `importance`：召回优先级，默认 `0.5`。
 - `validUntil`：过期时间。
 - `supersedes`：被当前记忆替代的旧记忆 ID。
 - `deletedAt`：逻辑删除标记，便于 Git 历史审计。
+
+默认值策略：
+
+- `kind` 默认为 `episode`。
+- `scope` 默认为 `global`。
+- `source` 默认为 `{ "type": "manual" }`。
+- `veracity` 在 manual 来源下默认为 `stated`，否则默认为 `unknown`。
+- `evidence`、`supersedes`、`tags` 默认为空数组。
+- `validUntil`、`deletedAt` 默认为 `null`。
 
 ## 7. 本地 SQLite/FTS 索引
 

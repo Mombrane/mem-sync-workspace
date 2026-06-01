@@ -22,7 +22,7 @@ try {
 
 async function addMemory(args) {
   const { text, options } = parseAddArgs(args);
-  const store = createMemoryStore();
+  const store = createMemoryStore({ logger: (message) => console.error(message) });
   const current = await readMemories();
   const memory = store.add(text, options);
   const merged = mergeMemorySets([current, [memory]]);
@@ -33,7 +33,7 @@ async function addMemory(args) {
 async function listMemories() {
   const memories = await readMemories();
   for (const memory of memories) {
-    console.log(`${memory.id}\t${memory.scope}\t${memory.source}\t${memory.text}`);
+    console.log(`${memory.id}\t${memory.scope}\t${formatSource(memory.source)}\t${memory.content ?? memory.text}`);
   }
 }
 
@@ -72,4 +72,9 @@ function requireValue(args, index, flag) {
 
 function printHelp() {
   console.log(`mem-sync\n\nUsage:\n  mem-sync add <text> [--scope name] [--source name]\n  mem-sync list\n  mem-sync export`);
+}
+
+function formatSource(source) {
+  if (typeof source === 'string') return source;
+  return source?.agent ?? source?.type ?? 'unknown';
 }

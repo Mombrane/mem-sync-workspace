@@ -1,36 +1,41 @@
 import { createHash } from 'node:crypto';
+import { normalizeContent, normalizeMemoryInput } from './schema.js';
 
 export function normalizeText(text) {
-  if (typeof text !== 'string') {
-    throw new TypeError('Memory text must be a string.');
-  }
-
-  const normalized = text.replace(/\s+/g, ' ').trim();
-  if (!normalized) {
-    throw new Error('Memory text cannot be empty.');
-  }
-
-  return normalized;
+  return normalizeContent(text);
 }
 
-export function createMemoryStore({ now = () => new Date() } = {}) {
+export function createMemoryStore({ now = () => new Date(), logger = defaultLogger } = {}) {
   return {
     add(text, options = {}) {
+      log(logger, '[mem-sync:schema] normalize:start');
       const normalizedText = normalizeText(text);
-      const scope = options.scope ?? 'global';
+      const legacyScope = options.scope ?? 'global';
+      const scope = normalizeLegacyScope(legacyScope);
       const source = options.source ?? 'manual';
       const timestamp = typeof now === 'function' ? now() : now;
-      const isoTimestamp = new Date(timestamp).toISOString();
-      const id = createMemoryId(normalizedText, scope, source);
+      const id = createMemoryId(normalizedText, legacyScope, legacySourceName(source));
 
-      return {
-        id,
-        text: normalizedText,
-        scope,
-        source,
-        createdAt: isoTimestamp,
-        updatedAt: isoTimestamp
-      };
+      try {
+        // 过渡期仍由 memory-store 接收旧 add(text, options) API，
+        // 但返回值已经升级为 Schema v1，避免后续 JSONL 迁移时再做大规模形态转换。
+        const memory = normalizeMemoryInput({
+          ...options,
+          id,
+          content: normalizedText,
+          scope,
+          source,
+          now: timestamp
+        });
+
+        log(logger, '[mem-sync:schema] validate:ok');
+        log(logger, '[mem-sync:store] memory:accepted');
+        return memory;
+      } catch (error) {
+        log(logger, `[mem-sync:schema] validate:error ${error.message}`);
+        throw error;
+      }
+
     }
   };
 }
@@ -65,4 +70,23 @@ export function mergeMemorySets(memorySets) {
 
 function compareTimestamp(left, right) {
   return new Date(left).getTime() - new Date(right).getTime();
+}
+
+function legacySourceName(source) {
+  if (typeof source === 'string') return source;
+  return source?.agent ?? source?.type ?? 'manual';
+}
+
+function normalizeLegacyScope(scope) {
+  // 旧原型和 README 示例使用 assistant；Schema v1 中对应 agent。
+  // 在 store 边界做兼容映射，避免把旧命名泄漏进新的持久化 schema。
+  return scope === 'assistant' ? 'agent' : scope;
+}
+
+function defaultLogger() {}
+
+function log(logger, message) {
+  if (typeof logger === 'function') {
+    logger(message);
+  }
 }

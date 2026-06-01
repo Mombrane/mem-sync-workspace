@@ -1,8 +1,4 @@
-## Purpose
-
-Define the canonical memory record behavior used by all local and remote synchronization flows.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Normalize Memory Text
 The system SHALL normalize memory content before persistence by trimming leading and trailing whitespace and collapsing repeated whitespace to a single space.
@@ -24,6 +20,8 @@ The system SHALL merge memory sets by memory identifier and keep the record with
 #### Scenario: Same identifier appears in multiple stores
 - **WHEN** multiple memory records share the same identifier
 - **THEN** only the record with the newest `updatedAt` timestamp remains in the merged output
+
+## ADDED Requirements
 
 ### Requirement: Create Memory Schema V1 Records
 The system SHALL normalize memory input into a Memory Schema v1 record containing `schemaVersion`, `id`, `canonicalKey`, `kind`, `scope`, `content`, `summary`, `source`, `evidence`, `confidence`, `veracity`, `importance`, `createdAt`, `updatedAt`, `validUntil`, `deletedAt`, `supersedes`, and `tags`.

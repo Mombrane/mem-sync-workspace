@@ -20,6 +20,12 @@ node ./src/cli.js export
 
 By default, local data is written to `.mem-sync/memories.json` in the current working directory. Set `MEM_SYNC_HOME` to use a different directory.
 
+New memories are normalized as Memory Schema v1 records. The `add` command emits schema diagnostics to stderr, while `list` and `export` keep stdout suitable for human reading or JSON processing.
+
+## Roadmap
+
+The current prototype still stores memories in `.mem-sync/memories.json`. The next implementation phase migrates the source of truth to Git-friendly JSONL files, then layers local FTS recall and Git sync on top.
+
 ## GitHub Sync Model
 
 This prototype keeps GitHub integration intentionally thin:
