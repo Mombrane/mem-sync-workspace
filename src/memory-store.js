@@ -1,13 +1,14 @@
 import { createHash } from 'node:crypto';
 import { normalizeContent, normalizeMemoryInput } from './schema.js';
+import { appendJSONL } from './repo-store.js';
 
 export function normalizeText(text) {
   return normalizeContent(text);
 }
 
-export function createMemoryStore({ now = () => new Date(), logger = defaultLogger } = {}) {
+export function createMemoryStore({ now = () => new Date(), logger = defaultLogger, storePath } = {}) {
   return {
-    add(text, options = {}) {
+    async add(text, options = {}) {
       log(logger, '[mem-sync:schema] normalize:start');
       const normalizedText = normalizeText(text);
       const legacyScope = options.scope ?? 'global';
@@ -29,6 +30,12 @@ export function createMemoryStore({ now = () => new Date(), logger = defaultLogg
         });
 
         log(logger, '[mem-sync:schema] validate:ok');
+
+        // JSONL 追加写入：将新记录直接追加到 JSONL 文件末尾，
+        // 不再需要全量读取 → 合并 → 覆盖写入。
+        // storePath 可选，允许测试注入临时目录隔离持久化副作用。
+        await appendJSONL(memory, storePath);
+
         log(logger, '[mem-sync:store] memory:accepted');
         return memory;
       } catch (error) {

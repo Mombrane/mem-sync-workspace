@@ -1,64 +1,93 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { createMemoryStore, mergeMemorySets } from '../src/memory-store.js';
+import { resolveStorePath } from '../src/repo-store.js';
 
-test('createMemoryStore normalizes text and assigns stable ids', () => {
+/**
+ * 辅助函数：创建带隔离存储路径的 memory store。
+ * 每个测试使用独立临时目录，避免持久化副作用相互污染。
+ */
+async function tempStore(name, options = {}) {
+  const dir = await mkdtemp(join(tmpdir(), `mem-sync-store-${name}-`));
+  const storePath = resolveStorePath(dir);
+  const store = createMemoryStore({ storePath, ...options });
+  return { dir, storePath, store };
+}
+
+test('createMemoryStore normalizes text and assigns stable ids', async () => {
   const now = new Date('2026-06-01T10:00:00.000Z');
-  const store = createMemoryStore({ now });
+  const { dir, store } = await tempStore('stable-ids', { now });
 
-  const memory = store.add('  User prefers concise Chinese replies.  ', {
-    scope: 'assistant',
-    source: 'codex'
-  });
+  try {
+    const memory = await store.add('  User prefers concise Chinese replies.  ', {
+      scope: 'assistant',
+      source: 'codex'
+    });
 
-  assert.equal(memory.id, 'mem_306e0d41d406');
-  assert.equal(memory.content, 'User prefers concise Chinese replies.');
-  assert.equal(memory.scope, 'agent');
-  assert.deepEqual(memory.source, { type: 'manual', agent: 'codex' });
-  assert.equal(memory.createdAt, '2026-06-01T10:00:00.000Z');
+    assert.equal(memory.id, 'mem_306e0d41d406');
+    assert.equal(memory.content, 'User prefers concise Chinese replies.');
+    assert.equal(memory.scope, 'agent');
+    assert.deepEqual(memory.source, { type: 'manual', agent: 'codex' });
+    assert.equal(memory.createdAt, '2026-06-01T10:00:00.000Z');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
-test('createMemoryStore.add returns schema v1-compatible memories', () => {
+test('createMemoryStore.add returns schema v1-compatible memories', async () => {
   const now = new Date('2026-06-01T10:00:00.000Z');
   const logs = [];
-  const store = createMemoryStore({
+  const { dir, store } = await tempStore('schema-v1', {
     now,
     logger: (message) => logs.push(message)
   });
 
-  const memory = store.add('  用户偏好简洁中文回答。 ', {
-    kind: 'preference',
-    scope: 'user',
-    source: { type: 'manual', agent: 'codex' },
-    tags: ['language']
-  });
+  try {
+    const memory = await store.add('  用户偏好简洁中文回答。 ', {
+      kind: 'preference',
+      scope: 'user',
+      source: { type: 'manual', agent: 'codex' },
+      tags: ['language']
+    });
 
-  assert.equal(memory.schemaVersion, 1);
-  assert.equal(memory.content, '用户偏好简洁中文回答。');
-  assert.equal(memory.summary, '用户偏好简洁中文回答。');
-  assert.equal(memory.kind, 'preference');
-  assert.equal(memory.scope, 'user');
-  assert.equal(memory.confidence, 1);
-  assert.equal(memory.veracity, 'stated');
-  assert.deepEqual(memory.tags, ['language']);
-  assert.ok(memory.id.startsWith('mem_'));
-  assert.ok(memory.canonicalKey.startsWith('preference:user:'));
-  assert.deepEqual(logs, [
-    '[mem-sync:schema] normalize:start',
-    '[mem-sync:schema] validate:ok',
-    '[mem-sync:store] memory:accepted'
-  ]);
+    assert.equal(memory.schemaVersion, 1);
+    assert.equal(memory.content, '用户偏好简洁中文回答。');
+    assert.equal(memory.summary, '用户偏好简洁中文回答。');
+    assert.equal(memory.kind, 'preference');
+    assert.equal(memory.scope, 'user');
+    assert.equal(memory.confidence, 1);
+    assert.equal(memory.veracity, 'stated');
+    assert.deepEqual(memory.tags, ['language']);
+    assert.ok(memory.id.startsWith('mem_'));
+    assert.ok(memory.canonicalKey.startsWith('preference:user:'));
+    assert.deepEqual(logs, [
+      '[mem-sync:schema] normalize:start',
+      '[mem-sync:schema] validate:ok',
+      '[mem-sync:store] memory:accepted'
+    ]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
-test('createMemoryStore.add writes validation diagnostics to logger before throwing', () => {
+test('createMemoryStore.add writes validation diagnostics to logger before throwing', async () => {
   const logs = [];
-  const store = createMemoryStore({ logger: (message) => logs.push(message) });
+  const { dir, store } = await tempStore('validation-error', {
+    logger: (message) => logs.push(message)
+  });
 
-  assert.throws(() => store.add('x', { kind: 'unknown' }), /kind/);
-  assert.deepEqual(logs, [
-    '[mem-sync:schema] normalize:start',
-    '[mem-sync:schema] validate:error kind must be one of: preference, identity, project_fact, decision, workflow, correction, warning, episode.'
-  ]);
+  try {
+    await assert.rejects(() => store.add('x', { kind: 'unknown' }), /kind/);
+    assert.deepEqual(logs, [
+      '[mem-sync:schema] normalize:start',
+      '[mem-sync:schema] validate:error kind must be one of: preference, identity, project_fact, decision, workflow, correction, warning, episode.'
+    ]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test('mergeMemorySets keeps newest version for matching ids', () => {
