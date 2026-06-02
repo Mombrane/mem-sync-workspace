@@ -41,7 +41,7 @@
 - ✅ 步骤 13: MMR rerank for recall engine (2026-06-02)
 
 ## P2 待实现
-- LLM extractor/reranker
+- ✅ LLM extractor/reranker (2026-06-02)
 - encrypted repo support
 - generated skills
 - interactive review UI
