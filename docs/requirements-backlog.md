@@ -1,16 +1,16 @@
 # Mem Sync 需求待办清单
 
 > 由定时任务自动分析生成，也可手动编辑调整优先级
-> 最后更新: 2026-06-02 20:00
+> 最后更新: 2026-06-03
 
 ---
 
 ## 📊 需求统计
-- 总计: 1 个待处理需求
+- 总计: 0 个待处理需求
 - 🔴 高优先级: 0 个
 - 🟡 中优先级: 0 个
-- 🟢 低优先级: 1 个
-- ✅ 已完成: 16 个
+- 🟢 低优先级: 0 个
+- ✅ 已完成: 17 个
 
 ---
 
@@ -28,7 +28,7 @@
 ## 🟢 低优先级
 | ID | 需求描述 | 来源文档 | 状态 | 依赖 | 子需求 |
 |----|----------|----------|------|------|--------|
-| REQ-004 | interactive review UI | p2-backlog.md | ⏳ 待处理 | - | - |
+| REQ-004 | interactive review UI | p2-backlog.md | ✅ 已完成 | - | - |
 
 ---
 
@@ -51,6 +51,7 @@
 | REQ-001 | LLM extractor/reranker | 2026-06-02 | p2-backlog.md | [archive](../openspec/changes/archive/2026-06-02-llm-extractor-reranker) |
 | REQ-002 | generated skills | 2026-06-02 | p2-backlog.md | [archive](../openspec/changes/archive/2026-06-02-generated-skills) |
 | REQ-003 | encrypted repo support | 2026-06-02 | p2-backlog.md | [archive](../openspec/changes/encrypted-repo-support) |
+| REQ-004 | interactive review UI | 2026-06-03 | p2-backlog.md | [archive](../openspec/changes/archive/2026-06-03-interactive-review-ui) |
 
 ---
 
@@ -63,4 +64,5 @@
 ---
 
 ## 🔄 更新日志
+- 2026-06-03: 完成 REQ-004 interactive review UI — 添加 review approve/reject 命令
 - 2026-06-02 20:00: 初始化，从 p2-backlog.md 导入 4 个需求，从 completion-plan.md 导入 13 个已完成需求
