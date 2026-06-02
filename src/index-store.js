@@ -8,7 +8,8 @@ import {
   blobToFloat32,
   insertEmbeddings,
   queryEmbeddings,
-  computeHybridScore
+  computeHybridScore,
+  mmrRerank
 } from './embedding-cache.js';
 
 const DB_FILENAME = 'index.sqlite';
@@ -500,10 +501,12 @@ export async function rebuildIndexWithEmbeddings(repoDir, cacheDir, options = {}
  * @param {string} [options.veracity] - 按 veracity 过滤
  * @param {boolean} [options.excludeDeleted=true] - 是否排除已删除记录
  * @param {boolean} [options.excludeExpired=true] - 是否排除已过期记录
+ * @param {boolean} [options.mmr=false] - 是否启用 MMR 多样性重排序
+ * @param {number} [options.mmrLambda=0.7] - MMR 相关性权重 λ ∈ [0, 1]
  * @returns {Promise<object[]>} Schema v1 格式的记录数组，按 hybrid score 降序排列
  */
 export async function searchIndexHybrid(cacheDir, options = {}) {
-  const { embeddingProvider, embeddingWeight = 0.4, limit = 20 } = options;
+  const { embeddingProvider, embeddingWeight = 0.4, limit = 20, mmr = false, mmrLambda = 0.7 } = options;
 
   // Phase 1: Get FTS5 BM25 candidates (3x limit for re-ranking pool)
   const ftsResults = searchIndex(cacheDir, { ...options, limit: limit * 3 });
@@ -595,6 +598,9 @@ export async function searchIndexHybrid(cacheDir, options = {}) {
       const rowid = idToRowid.get(result.id);
       const vec = rowid != null ? embeddings.get(rowid) : null;
 
+      // 附加 _rowid 供 MMR 通过 embeddings Map 查找嵌入向量
+      result._rowid = rowid;
+
       if (vec) {
         const sim = cosineSimilarity(queryVec, vec);
         result._hybridScore = computeHybridScore(result._rank ?? 0, sim, embeddingWeight);
@@ -609,6 +615,16 @@ export async function searchIndexHybrid(cacheDir, options = {}) {
 
     // Re-sort by hybrid score (higher = better)
     ftsResults.sort((a, b) => (b._hybridScore ?? 0) - (a._hybridScore ?? 0));
+
+    // Phase 3: MMR diversity reranking (opt-in)
+    if (mmr) {
+      const mmrResults = mmrRerank(ftsResults, {
+        lambda: mmrLambda,
+        k: limit,
+        embeddings
+      });
+      return mmrResults;
+    }
 
     return ftsResults.slice(0, limit);
   } finally {
@@ -681,6 +697,8 @@ export function getIndexStatus(cacheDir) {
  * @param {string} [options.veracity] - 按 veracity 枚举值过滤
  * @param {boolean} [options.excludeDeleted=true] - 是否排除已删除记录
  * @param {boolean} [options.excludeExpired=true] - 是否排除已过期记录
+ * @param {boolean} [options.mmr=false] - 是否启用 MMR 多样性重排序
+ * @param {number} [options.mmrLambda=0.7] - MMR 相关性权重 λ ∈ [0, 1]
  * @returns {object[]} Schema v1 格式的记录数组，按 BM25 相关性降序排列
  *
  * ## 旧签名（已弃用，向后兼容）
@@ -708,7 +726,9 @@ export function searchIndex(cacheDir, optionsOrQuery, legacyLimit) {
     minImportance,
     veracity,
     excludeDeleted,
-    excludeExpired
+    excludeExpired,
+    mmr,
+    mmrLambda
   } = options;
 
   const effectiveLimit = limit ?? 20;
@@ -799,6 +819,15 @@ export function searchIndex(cacheDir, optionsOrQuery, legacyLimit) {
     // FTS + SQL 过滤后的结果集很小（≤ effectiveLimit），JS 过滤开销可忽略。
     if (tags && tags.length > 0) {
       results = results.filter(r => tags.every(t => r.tags.includes(t)));
+    }
+
+    // MMR 多样性重排序（可选）：仅当 mmr=true 时启用。
+    // FTS-only 模式下没有嵌入向量可用，MMR 使用 trigram Jaccard 作为相似度度量。
+    if (mmr && results.length > 0) {
+      results = mmrRerank(results, {
+        lambda: mmrLambda ?? 0.7,
+        k: effectiveLimit
+      });
     }
   } catch (error) {
     // FTS5 查询语法错误或表不存在时返回空结果，

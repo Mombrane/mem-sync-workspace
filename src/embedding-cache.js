@@ -171,3 +171,139 @@ export function getEmbeddingStatus(cacheDir) {
 
   return { count, model, dimensions, exists };
 }
+
+/**
+ * 计算两个字符串的字符三元组 Jaccard 相似度。
+ *
+ * 将每个字符串拆分为字符三元组集合，计算交集大小与并集大小的比值。
+ * 用于 MMR 中近似衡量文档间的表面重叠度，作为无嵌入向量时的回退相似度。
+ *
+ * @param {string} textA - 第一个字符串（通常为 content+summary）
+ * @param {string} textB - 第二个字符串
+ * @returns {number} Jaccard 相似度，范围 [0, 1]
+ */
+export function trigramJaccard(textA, textB) {
+  const a = textA ?? '';
+  const b = textB ?? '';
+
+  /** @type {Set<string>} */
+  const trigramsA = new Set();
+  /** @type {Set<string>} */
+  const trigramsB = new Set();
+
+  for (let i = 0; i <= a.length - 3; i++) {
+    trigramsA.add(a.slice(i, i + 3));
+  }
+  for (let i = 0; i <= b.length - 3; i++) {
+    trigramsB.add(b.slice(i, i + 3));
+  }
+
+  // 两个字符串都没有足够的字符生成三元组时，返回 0
+  if (trigramsA.size === 0 && trigramsB.size === 0) return 0;
+
+  // 计算交集大小
+  let intersection = 0;
+  for (const trigram of trigramsA) {
+    if (trigramsB.has(trigram)) {
+      intersection += 1;
+    }
+  }
+
+  // 并集大小 = |A| + |B| - |A ∩ B|
+  const union = trigramsA.size + trigramsB.size - intersection;
+
+  return union === 0 ? 0 : intersection / union;
+}
+
+/**
+ * 最大边际相关性（Maximal Marginal Relevance, MMR）重排序算法。
+ *
+ * 贪心迭代选择候选文档：第一个选择相关性最高的文档，
+ * 后续文档最大化 λ·relevance(d) - (1-λ)·max(similarity(d, 已选文档))。
+ * 平衡相关性和多样性，避免前 K 个结果在内容上过度重叠。
+ *
+ * @param {object[]} results - 已评分的搜索结果数组
+ * @param {object} [options={}] - MMR 选项
+ * @param {number} [options.lambda=0.7] - 相关性权重 λ ∈ [0, 1]
+ * @param {number} [options.k] - 返回的最大结果数，默认为 results.length
+ * @param {Map<number, Float32Array>} [options.embeddings] - rowid → 嵌入向量的映射，
+ *   提供时使用余弦相似度，否则回退到 trigram Jaccard
+ * @returns {object[]} 带有 _mmrScore 和 _mmrLambda 注释的重排序结果
+ */
+export function mmrRerank(results, options = {}) {
+  const { lambda = 0.7, k = results.length, embeddings = null } = options;
+
+  if (results.length === 0) return [];
+
+  // 步骤 1：计算每条结果的相关性分数
+  // _hybridScore 存在时直接使用（已在 [0, 1] 范围，越高越好）
+  // 否则将 BM25 rank 归一化到 [0, 1]：更负的 rank 表示更匹配，
+  // 使用 |rank| / (1 + |rank|) 映射到更高分数
+  const relevance = results.map(r => {
+    if (typeof r._hybridScore === 'number') return r._hybridScore;
+    const absRank = Math.abs(r._rank ?? 0);
+    return absRank / (1 + absRank);
+  });
+
+  // 步骤 2：辅助函数 — 计算两条结果之间的相似度
+  function interDocSim(i, j) {
+    if (embeddings) {
+      const vecA = embeddings.get(results[i]._rowid);
+      const vecB = embeddings.get(results[j]._rowid);
+      if (vecA && vecB) {
+        return cosineSimilarity(vecA, vecB);
+      }
+    }
+    // 回退：trigram Jaccard
+    const textA = (results[i].summary ?? '') + '\n' + (results[i].content ?? '');
+    const textB = (results[j].summary ?? '') + '\n' + (results[j].content ?? '');
+    return trigramJaccard(textA, textB);
+  }
+
+  // 步骤 3：贪心选择
+  const remaining = results.map((_, i) => i);
+  const selected = [];
+
+  // 选择第一个：相关性最高
+  const firstIdx = remaining.reduce((best, i) =>
+    relevance[i] > relevance[best] ? i : best, 0);
+  selected.push({ idx: firstIdx, mmrScore: relevance[firstIdx] });
+  remaining.splice(remaining.indexOf(firstIdx), 1);
+
+  // 迭代选择后续文档
+  const effectiveK = Math.min(k, results.length);
+  while (selected.length < effectiveK && remaining.length > 0) {
+    let bestIdx = -1;
+    let bestMmr = -Infinity;
+
+    for (const i of remaining) {
+      // 计算与所有已选中文档的最大相似度
+      let maxSim = 0;
+      for (const s of selected) {
+        const sim = interDocSim(i, s.idx);
+        if (sim > maxSim) maxSim = sim;
+      }
+
+      const mmr = lambda * relevance[i] - (1 - lambda) * maxSim;
+      if (mmr > bestMmr) {
+        bestMmr = mmr;
+        bestIdx = i;
+      }
+    }
+
+    if (bestIdx >= 0) {
+      selected.push({ idx: bestIdx, mmrScore: bestMmr });
+      remaining.splice(remaining.indexOf(bestIdx), 1);
+    } else {
+      break;
+    }
+  }
+
+  // 步骤 4：按选择顺序构建结果，附加 _mmrScore 和 _mmrLambda
+  return selected.map(s => {
+    const record = { ...results[s.idx] };
+    record._mmrScore = s.mmrScore;
+    record._mmrLambda = lambda;
+    return record;
+  });
+}

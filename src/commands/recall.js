@@ -172,6 +172,17 @@ export function parseRecallArgs(args) {
     } else if (arg === '--include-expired') {
       searchOptions.excludeExpired = false;
       index += 1;
+    } else if (arg === '--mmr') {
+      searchOptions.mmr = true;
+      index += 1;
+    } else if (arg === '--mmr-lambda') {
+      const raw = requireValue(args, index, '--mmr-lambda');
+      const num = parseFloat(raw);
+      if (!Number.isFinite(num)) {
+        throw new Error('--mmr-lambda must be a number.');
+      }
+      searchOptions.mmrLambda = validateRange(num, 0, 1, '--mmr-lambda');
+      index += 2;
     } else if (arg.startsWith('--')) {
       // 未知标志：严格解析，立即报错
       throw new Error(`unknown option: ${arg}`);
@@ -190,6 +201,11 @@ export function parseRecallArgs(args) {
   // 将累加的标签数组附加到搜索选项
   if (tags.length > 0) {
     searchOptions.tags = tags;
+  }
+
+  // 当 --mmr 启用但未显式指定 --mmr-lambda 时，使用默认值 0.7
+  if (searchOptions.mmr && searchOptions.mmrLambda === undefined) {
+    searchOptions.mmrLambda = 0.7;
   }
 
   return { query, format, ...searchOptions };
@@ -221,12 +237,15 @@ function outputMarkdown(results, query) {
         ? memory._rank.toFixed(2)
         : 'N/A';
     const scoreLabel = typeof memory._hybridScore === 'number' ? 'Hybrid' : 'BM25';
+    const mmrScoreInfo = typeof memory._mmrScore === 'number'
+      ? `, mmr=${memory._mmrScore.toFixed(2)}`
+      : '';
     const tags = memory.tags && memory.tags.length > 0 ? memory.tags : [];
 
     // 标题行
     process.stdout.write(`## ${rank}. [${memory.kind}] ${summaryText}\n`);
     // 分数和 ID
-    process.stdout.write(`**Score:** ${score} (${scoreLabel}) | **ID:** \`${memory.id}\`\n`);
+    process.stdout.write(`**Score:** ${score} (${scoreLabel}${mmrScoreInfo}) | **ID:** \`${memory.id}\`\n`);
     // 元数据行 1：scope, kind, confidence, importance
     process.stdout.write(
       `**Scope:** ${memory.scope} | **Kind:** ${memory.kind} | ` +
@@ -295,6 +314,9 @@ function outputMemories(results) {
     const normalizedRank = typeof memory._hybridScore === 'number'
       ? memory._hybridScore.toFixed(2)
       : (1 / (1 + Math.abs(rawRank))).toFixed(2);
+    const mmrAttr = typeof memory._mmrScore === 'number'
+      ? `mmr=${memory._mmrScore.toFixed(2)}`
+      : null;
 
     const attrs = [
       `id=${memory.id}`,
@@ -304,6 +326,10 @@ function outputMemories(results) {
       `confidence=${memory.confidence}`,
       `importance=${memory.importance}`
     ];
+
+    if (mmrAttr) {
+      attrs.splice(1, 0, mmrAttr);
+    }
 
     if (memory.tags && memory.tags.length > 0) {
       attrs.push(`tags=${memory.tags.join(',')}`);
