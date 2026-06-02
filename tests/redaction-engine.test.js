@@ -195,3 +195,34 @@ test('match index is correctly reported', () => {
   assert.ok(r.blocked);
   assert.equal(r.matches[0].index, 40);
 });
+
+test('loadRedactionRules throws on invalid custom regex', () => {
+  const tmpDir = mkdtempSync(join(tmpdir(), 'redaction-invalid-regex-'));
+  try {
+    const metaDir = join(tmpDir, 'meta');
+    mkdirSync(metaDir, { recursive: true });
+    writeFileSync(join(metaDir, 'redaction-rules.json'), JSON.stringify({
+      version: 1,
+      rules: [{ name: 'bad-regex', pattern: '[' }]
+    }), 'utf8');
+
+    assert.throws(() => loadRedactionRules(tmpDir), /Invalid regex in rule "bad-regex"/);
+  } finally {
+    rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('loadRedactionRules throws when custom rule misses name or pattern', () => {
+  for (const rule of [{ pattern: 'SECRET' }, { name: 'missing-pattern' }]) {
+    const tmpDir = mkdtempSync(join(tmpdir(), 'redaction-invalid-rule-'));
+    try {
+      const metaDir = join(tmpDir, 'meta');
+      mkdirSync(metaDir, { recursive: true });
+      writeFileSync(join(metaDir, 'redaction-rules.json'), JSON.stringify({ version: 1, rules: [rule] }), 'utf8');
+
+      assert.throws(() => loadRedactionRules(tmpDir), /Invalid custom rule: missing name or pattern/);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  }
+});

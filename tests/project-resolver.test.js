@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execSync } from 'node:child_process';
 import { resolveProjectId } from '../src/project-resolver.js';
@@ -70,6 +70,19 @@ test('resolveProjectId returns directory basename as final fallback', async () =
     const result = resolveProjectId(dir);
     const expected = join(dir).split('/').pop(); // basename
     assert.equal(result, expected);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('resolveProjectId falls back to directory basename when package.json has no name', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'mem-sync-project-no-name-'));
+  try {
+    await writeFile(join(dir, 'package.json'), JSON.stringify({ version: '1.0.0' }), 'utf8');
+
+    const result = resolveProjectId(dir);
+
+    assert.equal(result, basename(dir));
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

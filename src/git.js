@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process';
+import { execSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -30,6 +30,22 @@ function execGit(command, cwd) {
     encoding: 'utf8',
     stdio: ['pipe', 'pipe', 'pipe']
   });
+}
+
+function execGitArgs(args, cwd) {
+  const result = spawnSync('git', args, {
+    cwd,
+    encoding: 'utf8',
+    stdio: ['pipe', 'pipe', 'pipe']
+  });
+  if (result.status !== 0) {
+    const error = new Error(result.stderr || `git ${args.join(' ')} failed`);
+    error.stdout = result.stdout;
+    error.stderr = result.stderr;
+    error.status = result.status;
+    throw error;
+  }
+  return result.stdout;
 }
 
 // ─── 公开 API ────────────────────────────────────────────────────────────
@@ -186,7 +202,8 @@ export function rebaseAbort(cwd) {
  * @param {string} filePath - 相对于 cwd 的文件路径
  */
 export function stageFile(cwd, filePath) {
-  execGit(`add "${filePath}"`, cwd);
+  // Use argument-array execution for user-controlled paths to avoid shell interpolation.
+  execGitArgs(['add', filePath], cwd);
 }
 
 /**
@@ -199,7 +216,7 @@ export function stageFile(cwd, filePath) {
  * @returns {string} 短提交哈希（7 位字符）
  */
 export function commit(cwd, message) {
-  execGit(`commit -m "${message}"`, cwd);
+  execGitArgs(['commit', '-m', message], cwd);
   return execGit('rev-parse --short HEAD', cwd).trim();
 }
 
@@ -241,7 +258,7 @@ export function ensureClone(remoteUrl, cwd) {
     } catch {
       // 目录可能不存在或无法删除
     }
-    execGit(`clone "${remoteUrl}" "${cwd}"`, process.cwd());
+    execGitArgs(['clone', remoteUrl, cwd], process.cwd());
   } else {
     // 无远端 URL 时初始化为空 Git 仓库
     try {

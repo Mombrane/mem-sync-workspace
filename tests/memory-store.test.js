@@ -100,3 +100,31 @@ test('mergeMemorySets keeps newest version for matching ids', () => {
   assert.deepEqual(merged.map((memory) => memory.id), ['mem_b', 'mem_a']);
   assert.equal(merged.find((memory) => memory.id === 'mem_a').text, 'new');
 });
+
+test('createMemoryStore.add blocks content matching redaction rules', async () => {
+  const { dir, store } = await tempStore('redaction-block');
+
+  try {
+    await assert.rejects(
+      () => store.add('api_key="1234567890abcdef"', { source: 'codex' }),
+      /content blocked by redaction rule: api-key/
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('createMemoryStore.add allows redacted-looking content when skipRedaction is true', async () => {
+  const { dir, store } = await tempStore('redaction-skip');
+
+  try {
+    const memory = await store.add('api_key="1234567890abcdef"', {
+      source: 'codex',
+      skipRedaction: true
+    });
+
+    assert.equal(memory.content, 'api_key="1234567890abcdef"');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

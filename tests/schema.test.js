@@ -125,3 +125,38 @@ test('normalizeContent rejects non-string and empty values', () => {
   assert.throws(() => normalizeContent(null), /content/);
   assert.throws(() => normalizeContent('   '), /content/);
 });
+
+test('normalizeMemoryInput accepts legacy text field and explicit id', () => {
+  const memory = normalizeMemoryInput({
+    id: 'mem_explicit',
+    text: ' Legacy text body ',
+    now: '2026-06-02T00:00:00.000Z'
+  });
+
+  assert.equal(memory.id, 'mem_explicit');
+  assert.equal(memory.content, 'Legacy text body');
+});
+
+test('createCanonicalKey changes when projectId or agentId changes', () => {
+  const base = normalizeMemoryInput({ content: 'Scoped fact', kind: 'project_fact', scope: 'project', projectId: 'a', agentId: 'agent-1' });
+  const differentProject = normalizeMemoryInput({ content: 'Scoped fact', kind: 'project_fact', scope: 'project', projectId: 'b', agentId: 'agent-1' });
+  const differentAgent = normalizeMemoryInput({ content: 'Scoped fact', kind: 'project_fact', scope: 'project', projectId: 'a', agentId: 'agent-2' });
+
+  assert.notEqual(base.canonicalKey, differentProject.canonicalKey);
+  assert.notEqual(base.canonicalKey, differentAgent.canonicalKey);
+});
+
+test('normalizeMemoryInput applies defaults for non-manual source through public API', () => {
+  const memory = normalizeMemoryInput({ content: 'Imported fact', source: { type: 'imported' } });
+
+  assert.equal(memory.confidence, 0.5);
+  assert.equal(memory.veracity, 'unknown');
+});
+
+test('normalizeMemoryInput rejects invalid timestamp fields with field names', () => {
+  assert.throws(() => normalizeMemoryInput({ content: 'x', now: 'not-date' }), /now must be a valid ISO timestamp/);
+  assert.throws(() => normalizeMemoryInput({ content: 'x', createdAt: 'not-date' }), /createdAt must be a valid ISO timestamp/);
+  assert.throws(() => normalizeMemoryInput({ content: 'x', updatedAt: 'not-date' }), /updatedAt must be a valid ISO timestamp/);
+  assert.throws(() => normalizeMemoryInput({ content: 'x', validUntil: 'not-date' }), /validUntil must be a valid ISO timestamp/);
+  assert.throws(() => normalizeMemoryInput({ content: 'x', deletedAt: 'not-date' }), /deletedAt must be a valid ISO timestamp/);
+});

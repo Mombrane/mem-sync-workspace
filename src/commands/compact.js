@@ -40,8 +40,8 @@ export function parseCompactArgs(args) {
       if (raw === undefined) {
         throw new Error('--older-than requires a value.');
       }
-      const num = parseInt(raw, 10);
-      if (!Number.isFinite(num) || num < 0) {
+      const num = Number(raw);
+      if (!Number.isInteger(num) || num < 0) {
         throw new Error('--older-than must be a non-negative integer.');
       }
       olderThanDays = num;

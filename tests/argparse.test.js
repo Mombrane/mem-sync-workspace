@@ -85,3 +85,14 @@ test('validatePositiveInt rejects 0, negative numbers, and floats', () => {
     { message: '--limit must be a positive integer.' }
   );
 });
+
+test('validateRange rejects NaN and string values', () => {
+  assert.throws(
+    () => validateRange(Number.NaN, 0, 1, '--confidence'),
+    { message: '--confidence must be between 0 and 1.' }
+  );
+  assert.throws(
+    () => validateRange('0.5', 0, 1, '--confidence'),
+    { message: '--confidence must be between 0 and 1.' }
+  );
+});

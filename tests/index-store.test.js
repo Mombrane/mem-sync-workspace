@@ -670,3 +670,73 @@ test('updateIndex falls back to full rebuild when no prior repo_head exists', as
     await rm(cacheDir, { recursive: true, force: true });
   }
 });
+
+test('searchIndex filters by projectId, agentId, veracity, and minImportance', async () => {
+  const repoDir = await tempDir('filter-extra-repo');
+  const cacheDir = await tempDir('filter-extra-cache');
+  try {
+    await writeJSONLFile(repoDir, 'memories.jsonl', [
+      makeRecord({ id: 'mem_target', content: 'shared keyword target', projectId: 'project-a', agentId: 'agent-a', veracity: 'stated', importance: 0.9 }),
+      makeRecord({ id: 'mem_project', content: 'shared keyword wrong project', projectId: 'project-b', agentId: 'agent-a', veracity: 'stated', importance: 0.9 }),
+      makeRecord({ id: 'mem_agent', content: 'shared keyword wrong agent', projectId: 'project-a', agentId: 'agent-b', veracity: 'stated', importance: 0.9 }),
+      makeRecord({ id: 'mem_veracity', content: 'shared keyword wrong veracity', projectId: 'project-a', agentId: 'agent-a', veracity: 'unknown', importance: 0.9 }),
+      makeRecord({ id: 'mem_importance', content: 'shared keyword low importance', projectId: 'project-a', agentId: 'agent-a', veracity: 'stated', importance: 0.1 })
+    ]);
+    rebuildIndex(repoDir, cacheDir, { repoHead: 'filter-extra' });
+
+    const results = searchIndex(cacheDir, {
+      query: 'shared keyword',
+      projectId: 'project-a',
+      agentId: 'agent-a',
+      veracity: 'stated',
+      minImportance: 0.5,
+      limit: 10
+    });
+
+    assert.deepEqual(results.map(result => result.id), ['mem_target']);
+  } finally {
+    await rm(repoDir, { recursive: true, force: true });
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test('rebuildIndex indexes JSONL files in nested directories', async () => {
+  const repoDir = await tempDir('recursive-repo');
+  const cacheDir = await tempDir('recursive-cache');
+  try {
+    await mkdir(join(repoDir, 'memories', '2026'), { recursive: true });
+    await writeJSONLFile(join(repoDir, 'memories', '2026'), 'nested.jsonl', [
+      makeRecord({ id: 'mem_nested', content: 'nested recursive memory' })
+    ]);
+
+    const result = rebuildIndex(repoDir, cacheDir, { repoHead: 'recursive-test' });
+    assert.equal(result.recordCount, 1);
+
+    const matches = searchIndex(cacheDir, { query: 'recursive', limit: 10 });
+    assert.deepEqual(matches.map(match => match.id), ['mem_nested']);
+  } finally {
+    await rm(repoDir, { recursive: true, force: true });
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test('rebuildIndex sends parse and validation diagnostics to logger', async () => {
+  const repoDir = await tempDir('logger-repo');
+  const cacheDir = await tempDir('logger-cache');
+  try {
+    await writeFile(join(repoDir, 'memories.jsonl'), [
+      '{ bad json',
+      JSON.stringify({ id: 'bad-schema' })
+    ].join('\n') + '\n', 'utf8');
+    const logs = [];
+
+    const result = rebuildIndex(repoDir, cacheDir, { repoHead: 'logger-test', logger: message => logs.push(message) });
+
+    assert.equal(result.recordCount, 0);
+    assert.ok(logs.some(message => message.includes('invalid JSON')));
+    assert.ok(logs.some(message => message.includes('validation failed')));
+  } finally {
+    await rm(repoDir, { recursive: true, force: true });
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});

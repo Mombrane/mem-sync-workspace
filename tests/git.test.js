@@ -14,6 +14,9 @@ import {
   stashPop,
   rebaseAbort,
   ensureClone,
+  stageFile,
+  commit,
+  push,
   RebaseConflictError
 } from '../src/git.js';
 
@@ -292,6 +295,112 @@ test('stashSave returns false when no changes', () => {
   }
 });
 
+// ─── stageFile/commit/push ─────────────────────────────────────────
+
+test('stageFile stages an existing file', () => {
+  const repoDir = createTempRepo('stage-file');
+
+  try {
+    writeFileSync(join(repoDir, 'memory.jsonl'), '{"id":"mem_1"}\n', 'utf8');
+
+    stageFile(repoDir, 'memory.jsonl');
+
+    const status = execSync('git status --porcelain', { cwd: repoDir, encoding: 'utf8' });
+    assert.match(status, /^A\s+memory\.jsonl/m);
+  } finally {
+    rmSync(repoDir, { recursive: true, force: true });
+  }
+});
+
+test('stageFile throws when file does not exist', () => {
+  const repoDir = createTempRepo('stage-missing');
+
+  try {
+    assert.throws(() => stageFile(repoDir, 'missing.jsonl'));
+  } finally {
+    rmSync(repoDir, { recursive: true, force: true });
+  }
+});
+
+test('commit creates a commit with the requested message', () => {
+  const repoDir = createTempRepo('commit-message');
+
+  try {
+    writeFileSync(join(repoDir, 'memory.jsonl'), '{"id":"mem_1"}\n', 'utf8');
+    stageFile(repoDir, 'memory.jsonl');
+
+    const hash = commit(repoDir, 'mem-sync: test commit');
+
+    assert.match(hash, /^[0-9a-f]{7,}$/);
+    const message = execSync('git log -1 --format=%s', { cwd: repoDir, encoding: 'utf8' }).trim();
+    assert.equal(message, 'mem-sync: test commit');
+  } finally {
+    rmSync(repoDir, { recursive: true, force: true });
+  }
+});
+
+test('commit throws when there are no staged changes', () => {
+  const repoDir = createTempRepo('commit-empty');
+
+  try {
+    assert.throws(() => commit(repoDir, 'mem-sync: empty'));
+  } finally {
+    rmSync(repoDir, { recursive: true, force: true });
+  }
+});
+
+test('push returns false when no remote is configured', () => {
+  const repoDir = createTempRepo('push-no-remote');
+
+  try {
+    writeFileSync(join(repoDir, 'memory.jsonl'), '{"id":"mem_1"}\n', 'utf8');
+    stageFile(repoDir, 'memory.jsonl');
+    commit(repoDir, 'mem-sync: local only');
+
+    assert.equal(push(repoDir), false);
+  } finally {
+    rmSync(repoDir, { recursive: true, force: true });
+  }
+});
+
+test('push sends committed changes to origin', () => {
+  const bareDir = createBareRepo('push-origin');
+  const repoDir = createTempRepo('push-origin-local');
+
+  try {
+    execSync(`git remote add origin "${bareDir}"`, { cwd: repoDir, encoding: 'utf8' });
+    writeFileSync(join(repoDir, 'memory.jsonl'), '{"id":"mem_1"}\n', 'utf8');
+    stageFile(repoDir, 'memory.jsonl');
+    commit(repoDir, 'mem-sync: push test');
+
+    assert.equal(push(repoDir), true);
+
+    const remoteLog = execSync('git log --oneline --all', { cwd: bareDir, encoding: 'utf8' });
+    assert.match(remoteLog, /mem-sync: push test/);
+  } finally {
+    rmSync(repoDir, { recursive: true, force: true });
+    rmSync(bareDir, { recursive: true, force: true });
+  }
+});
+
+test('stageFile and commit handle quotes in file names and messages', () => {
+  const repoDir = createTempRepo('git-safe-args');
+
+  try {
+    const filename = 'quote"file.txt';
+    writeFileSync(join(repoDir, filename), 'content', 'utf8');
+
+    stageFile(repoDir, filename);
+    const hash = commit(repoDir, 'message with "quotes"');
+
+    assert.match(hash, /^[0-9a-f]{7,}$/);
+    const message = execSync('git log -1 --format=%s', { cwd: repoDir, encoding: 'utf8' }).trim();
+    assert.equal(message, 'message with "quotes"');
+  } finally {
+    rmSync(repoDir, { recursive: true, force: true });
+  }
+});
+
 // ─── rebaseAbort ────────────────────────────────────────────────────
 
 test('rebaseAbort aborts in-progress rebase', () => {
@@ -331,5 +440,4 @@ test('rebaseAbort aborts in-progress rebase', () => {
     rmSync(repoDir, { recursive: true, force: true });
   }
 });
-
 
