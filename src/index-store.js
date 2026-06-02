@@ -3,6 +3,13 @@ import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
 import { validateMemory } from './schema.js';
+import {
+  cosineSimilarity,
+  blobToFloat32,
+  insertEmbeddings,
+  queryEmbeddings,
+  computeHybridScore
+} from './embedding-cache.js';
 
 const DB_FILENAME = 'index.sqlite';
 
@@ -216,6 +223,23 @@ export function createIndexDatabase(cacheDir) {
     );
   `);
 
+  // Enable foreign keys for ON DELETE CASCADE support
+  db.pragma('foreign_keys = ON');
+
+  // Embeddings table: stores precomputed embedding vectors for hybrid search.
+  // Linked to memories via foreign key with CASCADE delete — when rebuildIndex
+  // clears memories, embeddings are automatically cleaned up.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS embeddings (
+      memory_rowid INTEGER PRIMARY KEY,
+      vector BLOB NOT NULL,
+      model TEXT NOT NULL,
+      dimensions INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (memory_rowid) REFERENCES memories(rowid) ON DELETE CASCADE
+    );
+  `);
+
   // index_meta 表存储索引元数据，当前仅包含 repo_head。
   // repo_head 用于增量更新检测：如果当前 HEAD 与存储值相同，
   // 则索引无需重建，直接跳过。
@@ -371,6 +395,225 @@ export function rebuildIndex(repoDir, cacheDir, options = {}) {
   logger?.(`[mem-sync:index] rebuild:complete indexed ${recordCount} records from ${fileCount} file(s)`);
 
   return { recordCount };
+}
+
+/**
+ * Rebuild index with optional embedding computation.
+ * Calls rebuildIndex() for FTS portion (sync, always succeeds),
+ * then optionally computes and stores embeddings.
+ *
+ * @param {string} repoDir - JSONL 源数据目录
+ * @param {string} cacheDir - 索引数据库缓存目录
+ * @param {object} [options={}]
+ * @param {EmbeddingProvider} [options.embeddingProvider] - Embedding provider
+ * @param {function} [options.logger] - 诊断日志回调
+ * @param {string} [options.repoHead] - 显式指定 HEAD 提交
+ * @returns {Promise<{recordCount: number, embeddingsGenerated: number, embeddingsFailed: number}>}
+ */
+export async function rebuildIndexWithEmbeddings(repoDir, cacheDir, options = {}) {
+  const { embeddingProvider, logger } = options;
+
+  // Phase 1: FTS index (sync, always succeeds)
+  const result = rebuildIndex(repoDir, cacheDir, options);
+
+  // Phase 2: Embeddings (async, best-effort)
+  if (!embeddingProvider || embeddingProvider.dimensions === 0) {
+    return { ...result, embeddingsGenerated: 0, embeddingsFailed: 0 };
+  }
+
+  const dbPath = resolveDbPath(cacheDir);
+  const db = new Database(dbPath);
+  db.pragma('journal_mode=WAL');
+  db.pragma('busy_timeout=5000');
+  db.pragma('foreign_keys = ON');
+
+  let generated = 0;
+  let failed = 0;
+
+  try {
+    // Get all memory rowids and content
+    const allRows = db.prepare('SELECT rowid, content, summary FROM memories').all();
+
+    if (allRows.length === 0) {
+      return { ...result, embeddingsGenerated: 0, embeddingsFailed: 0 };
+    }
+
+    // Batch embed in groups of 20
+    const BATCH_SIZE = 20;
+    for (let i = 0; i < allRows.length; i += BATCH_SIZE) {
+      const batch = allRows.slice(i, i + BATCH_SIZE);
+      const texts = batch.map(r => `${r.summary ?? ''}\n${r.content}`.trim());
+
+      let retries = 0;
+      const MAX_RETRIES = 3;
+
+      while (retries <= MAX_RETRIES) {
+        try {
+          const vectors = await embeddingProvider.embed(texts);
+          insertEmbeddings(db, batch.map(r => r.rowid), vectors, embeddingProvider.name, embeddingProvider.dimensions);
+          generated += batch.length;
+          break;
+        } catch (err) {
+          retries++;
+          if (retries > MAX_RETRIES) {
+            failed += batch.length;
+            logger?.(`[mem-sync:index] embed:batch-failed records=${batch.length} error=${err.message}`);
+          } else {
+            // Exponential backoff: 1s, 2s, 4s
+            await new Promise(r => setTimeout(r, 1000 * Math.pow(2, retries - 1)));
+          }
+        }
+      }
+    }
+
+    // Store embedding metadata
+    const now = new Date().toISOString();
+    db.prepare("INSERT OR REPLACE INTO index_meta (key, value) VALUES ('embedding_model', ?)").run(embeddingProvider.name);
+    db.prepare("INSERT OR REPLACE INTO index_meta (key, value) VALUES ('embedding_dimensions', ?)").run(String(embeddingProvider.dimensions));
+    db.prepare("INSERT OR REPLACE INTO index_meta (key, value) VALUES ('embeddings_count', ?)").run(String(generated));
+    db.prepare("INSERT OR REPLACE INTO index_meta (key, value) VALUES ('embeddings_generated_at', ?)").run(now);
+
+    logger?.(`[mem-sync:index] embed:complete generated=${generated} failed=${failed}`);
+  } finally {
+    db.close();
+  }
+
+  return { ...result, embeddingsGenerated: generated, embeddingsFailed: failed };
+}
+
+/**
+ * Hybrid search: FTS5 BM25 candidates + embedding cosine re-ranking.
+ *
+ * @param {string} cacheDir - 索引数据库缓存目录
+ * @param {object} [options={}]
+ * @param {EmbeddingProvider} [options.embeddingProvider] - Embedding provider
+ * @param {string} [options.query] - FTS5 查询字符串
+ * @param {number} [options.embeddingWeight=0.4] - BM25 weight in hybrid score [0, 1]
+ * @param {number} [options.limit=20] - 最大返回条数
+ * @param {string} [options.scope] - 按 scope 过滤
+ * @param {string} [options.kind] - 按 kind 过滤
+ * @param {string[]} [options.tags] - 按标签过滤
+ * @param {string} [options.projectId] - 按 project_id 过滤
+ * @param {string} [options.agentId] - 按 agent_id 过滤
+ * @param {number} [options.minConfidence=0] - 最小置信度阈值
+ * @param {number} [options.minImportance=0] - 最小重要性阈值
+ * @param {string} [options.veracity] - 按 veracity 过滤
+ * @param {boolean} [options.excludeDeleted=true] - 是否排除已删除记录
+ * @param {boolean} [options.excludeExpired=true] - 是否排除已过期记录
+ * @returns {Promise<object[]>} Schema v1 格式的记录数组，按 hybrid score 降序排列
+ */
+export async function searchIndexHybrid(cacheDir, options = {}) {
+  const { embeddingProvider, embeddingWeight = 0.4, limit = 20 } = options;
+
+  // Phase 1: Get FTS5 BM25 candidates (3x limit for re-ranking pool)
+  const ftsResults = searchIndex(cacheDir, { ...options, limit: limit * 3 });
+
+  // If no embedding provider or no FTS results, fall back
+  if (!embeddingProvider || embeddingProvider.dimensions === 0) {
+    return ftsResults.slice(0, limit);
+  }
+
+  if (ftsResults.length === 0) {
+    // FTS returned nothing — optionally do full vector scan for small indexes
+    const dbPath = resolveDbPath(cacheDir);
+    if (!existsSync(dbPath)) return [];
+
+    const db = new Database(dbPath);
+    db.pragma('journal_mode=WAL');
+    db.pragma('busy_timeout=5000');
+
+    try {
+      const count = db.prepare('SELECT COUNT(*) as c FROM embeddings').get()?.c ?? 0;
+      if (count === 0 || count > 1000) return [];
+
+      // Full vector scan fallback
+      const queryText = options.query ?? '';
+      const queryVectors = await embeddingProvider.embed([queryText]);
+      if (!queryVectors[0]) return [];
+
+      const queryVec = queryVectors[0];
+      const allEmbeddings = db.prepare('SELECT memory_rowid, vector FROM embeddings').all();
+
+      const scored = [];
+      for (const row of allEmbeddings) {
+        const vec = blobToFloat32(row.vector);
+        const sim = cosineSimilarity(queryVec, vec);
+        if (sim > 0) {
+          scored.push({ rowid: row.memory_rowid, similarity: sim });
+        }
+      }
+
+      scored.sort((a, b) => b.similarity - a.similarity);
+      const topRowids = scored.slice(0, limit).map(s => s.rowid);
+
+      if (topRowids.length === 0) return [];
+
+      // Fetch full records
+      const placeholders = topRowids.map(() => '?').join(', ');
+      const rows = db.prepare(`SELECT * FROM memories WHERE rowid IN (${placeholders})`).all(...topRowids);
+
+      // Map and sort by score
+      const rowidToScore = new Map(scored.map(s => [s.rowid, s.similarity]));
+      return rows.map(row => {
+        const record = mapRowToRecord(row);
+        record._rank = -(rowidToScore.get(row.rowid) ?? 0); // Negative = better (consistent with BM25)
+        return record;
+      }).sort((a, b) => a._rank - b._rank);
+    } finally {
+      db.close();
+    }
+  }
+
+  // Phase 2: Re-rank FTS candidates with embeddings
+  const dbPath = resolveDbPath(cacheDir);
+  const db = new Database(dbPath);
+  db.pragma('journal_mode=WAL');
+  db.pragma('busy_timeout=5000');
+
+  try {
+    // Get query embedding
+    const queryText = options.query ?? '';
+    const queryVectors = await embeddingProvider.embed([queryText]);
+    if (!queryVectors[0]) return ftsResults.slice(0, limit);
+    const queryVec = queryVectors[0];
+
+    // Get candidate rowids (need to map from id to rowid)
+    const candidateIds = ftsResults.map(r => r.id);
+    const placeholders = candidateIds.map(() => '?').join(', ');
+    const idToRowid = new Map();
+    const rowidRows = db.prepare(`SELECT rowid, id FROM memories WHERE id IN (${placeholders})`).all(...candidateIds);
+    for (const row of rowidRows) {
+      idToRowid.set(row.id, row.rowid);
+    }
+
+    // Load embeddings for candidates
+    const candidateRowids = candidateIds.map(id => idToRowid.get(id)).filter(Boolean);
+    const embeddings = queryEmbeddings(db, candidateRowids);
+
+    // Compute hybrid scores
+    for (const result of ftsResults) {
+      const rowid = idToRowid.get(result.id);
+      const vec = rowid != null ? embeddings.get(rowid) : null;
+
+      if (vec) {
+        const sim = cosineSimilarity(queryVec, vec);
+        result._hybridScore = computeHybridScore(result._rank ?? 0, sim, embeddingWeight);
+        result._cosineSim = sim;
+      } else {
+        // No embedding for this record — use BM25 only
+        const bm25Normalized = 1 / (1 + Math.abs(result._rank ?? 0));
+        result._hybridScore = embeddingWeight * bm25Normalized;
+        result._cosineSim = null;
+      }
+    }
+
+    // Re-sort by hybrid score (higher = better)
+    ftsResults.sort((a, b) => (b._hybridScore ?? 0) - (a._hybridScore ?? 0));
+
+    return ftsResults.slice(0, limit);
+  } finally {
+    db.close();
+  }
 }
 
 /**

@@ -4,6 +4,7 @@ import {
   getIndexStatus,
   updateIndex
 } from '../index-store.js';
+import { getEmbeddingStatus } from '../embedding-cache.js';
 
 /**
  * 解析仓库目录和缓存目录的默认路径。
@@ -47,8 +48,10 @@ export function statusCommand(args) {
 
   const useJson = args.includes('--format') && args[args.indexOf('--format') + 1] === 'json';
 
+  const embStatus = getEmbeddingStatus(cacheDir);
+
   if (useJson) {
-    console.log(JSON.stringify(status));
+    console.log(JSON.stringify({ ...status, embeddingCache: embStatus }));
   } else {
     // 人类可读输出
     console.log(`Index: ${status.exists ? 'exists' : 'not found'}`);
@@ -56,6 +59,17 @@ export function statusCommand(args) {
       console.log(`  Record count: ${status.recordCount}`);
       console.log(`  Repo HEAD:    ${status.repoHead ?? 'unknown'}`);
       console.log(`  DB path:      ${status.dbPath}`);
+    }
+
+    if (embStatus.exists && embStatus.count > 0) {
+      process.stdout.write(`\nEmbedding Cache:\n`);
+      process.stdout.write(`  Embeddings: ${embStatus.count}\n`);
+      process.stdout.write(`  Model: ${embStatus.model ?? 'unknown'}\n`);
+      process.stdout.write(`  Dimensions: ${embStatus.dimensions ?? 'unknown'}\n`);
+    } else if (embStatus.exists) {
+      process.stdout.write(`\nEmbedding Cache: empty (no embeddings computed)\n`);
+    } else {
+      process.stdout.write(`\nEmbedding Cache: not created\n`);
     }
   }
 }

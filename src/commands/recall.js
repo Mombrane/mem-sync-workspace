@@ -1,8 +1,10 @@
 import { join } from 'node:path';
 import {
   searchIndex,
+  searchIndexHybrid,
   getIndexStatus
 } from '../index-store.js';
+import { resolveEmbeddingProvider } from '../embedding-provider.js';
 import { MEMORY_KINDS, MEMORY_SCOPES, MEMORY_VERACITIES } from '../schema.js';
 import {
   requireValue,
@@ -12,6 +14,7 @@ import {
 } from '../argparse.js';
 
 const OUTPUT_FORMATS = ['markdown', 'json', 'memories'];
+const MODES = ['fts', 'hybrid', 'semantic'];
 
 /**
  * 解析缓存目录路径（与 index 命令使用相同的默认值）。
@@ -32,7 +35,7 @@ function resolveCacheDir() {
  * @returns {Promise<void>}
  */
 export async function recallCommand(args) {
-  const { query, format, ...searchOptions } = parseRecallArgs(args);
+  const { query, format, mode, ...searchOptions } = parseRecallArgs(args);
   const cacheDir = resolveCacheDir();
 
   // 检查索引是否存在，以区分"无匹配"和"索引未构建"
@@ -44,8 +47,34 @@ export async function recallCommand(args) {
     return;
   }
 
-  // 执行搜索
-  const results = searchIndex(cacheDir, { query, ...searchOptions });
+  let results;
+
+  if (mode === 'hybrid') {
+    // Resolve embedding provider from env vars
+    let provider;
+    try {
+      provider = resolveEmbeddingProvider();
+    } catch (err) {
+      // Provider resolution failed — warn and fall back to FTS
+      process.stderr.write(`Warning: ${err.message}. Falling back to FTS search.\n`);
+      provider = null;
+    }
+
+    if (!provider || provider.dimensions === 0) {
+      // No provider configured — warn and fall back to FTS
+      if (!provider || provider.name === 'none') {
+        process.stderr.write('Embedding provider not configured. Use MEM_SYNC_EMBEDDING_PROVIDER=mock or openai. Falling back to FTS search.\n');
+      }
+      results = searchIndex(cacheDir, { query, ...searchOptions });
+    } else {
+      results = await searchIndexHybrid(cacheDir, { query, embeddingProvider: provider, ...searchOptions });
+    }
+  } else if (mode === 'semantic') {
+    throw new Error('--mode semantic is not yet implemented.');
+  } else {
+    // Default: fts
+    results = searchIndex(cacheDir, { query, ...searchOptions });
+  }
 
   // 按格式输出结果
   switch (format) {
@@ -130,6 +159,13 @@ export function parseRecallArgs(args) {
     } else if (arg === '--veracity') {
       searchOptions.veracity = requireValue(args, index, '--veracity');
       index += 2;
+    } else if (arg === '--mode') {
+      searchOptions.mode = validateEnum(
+        requireValue(args, index, '--mode'),
+        MODES,
+        '--mode'
+      );
+      index += 2;
     } else if (arg === '--include-deleted') {
       searchOptions.excludeDeleted = false;
       index += 1;
@@ -179,13 +215,18 @@ function outputMarkdown(results, query) {
   results.forEach((memory, i) => {
     const rank = i + 1;
     const summaryText = (memory.summary ?? memory.content ?? '').slice(0, 80);
-    const score = typeof memory._rank === 'number' ? memory._rank.toFixed(2) : 'N/A';
+    const score = typeof memory._hybridScore === 'number'
+      ? `hybrid=${memory._hybridScore.toFixed(2)}${memory._cosineSim != null ? `, cos=${memory._cosineSim.toFixed(2)}` : ''}`
+      : typeof memory._rank === 'number'
+        ? memory._rank.toFixed(2)
+        : 'N/A';
+    const scoreLabel = typeof memory._hybridScore === 'number' ? 'Hybrid' : 'BM25';
     const tags = memory.tags && memory.tags.length > 0 ? memory.tags : [];
 
     // 标题行
     process.stdout.write(`## ${rank}. [${memory.kind}] ${summaryText}\n`);
     // 分数和 ID
-    process.stdout.write(`**Score:** ${score} (BM25) | **ID:** \`${memory.id}\`\n`);
+    process.stdout.write(`**Score:** ${score} (${scoreLabel}) | **ID:** \`${memory.id}\`\n`);
     // 元数据行 1：scope, kind, confidence, importance
     process.stdout.write(
       `**Scope:** ${memory.scope} | **Kind:** ${memory.kind} | ` +
@@ -251,7 +292,9 @@ function outputMemories(results) {
     // BM25 rank 归一化到 0–1 范围：1 / (1 + abs(rank))
     // rank 值越小（越负）表示相关性越高，归一化后 1 表示最佳匹配
     const rawRank = typeof memory._rank === 'number' ? memory._rank : 0;
-    const normalizedRank = (1 / (1 + Math.abs(rawRank))).toFixed(2);
+    const normalizedRank = typeof memory._hybridScore === 'number'
+      ? memory._hybridScore.toFixed(2)
+      : (1 / (1 + Math.abs(rawRank))).toFixed(2);
 
     const attrs = [
       `id=${memory.id}`,

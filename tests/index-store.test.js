@@ -8,8 +8,12 @@ import {
   rebuildIndex,
   getIndexStatus,
   searchIndex,
-  updateIndex
+  updateIndex,
+  rebuildIndexWithEmbeddings,
+  searchIndexHybrid
 } from '../src/index-store.js';
+import { createMockProvider, noopProvider } from '../src/embedding-provider.js';
+import { getEmbeddingStatus } from '../src/embedding-cache.js';
 
 /**
  * 辅助函数：创建隔离的临时目录，用于缓存数据库和 JSONL 测试数据。
@@ -700,6 +704,232 @@ test('searchIndex filters by projectId, agentId, veracity, and minImportance', a
   }
 });
 
+// ─── Embedding support ──────────────────────────────────────────────
+
+test('createIndexDatabase creates embeddings table', async () => {
+  const cacheDir = await tempDir('embed-table');
+
+  try {
+    createIndexDatabase(cacheDir);
+
+    // Verify the embeddings table exists in the database
+    const dbPath = join(cacheDir, 'index.sqlite');
+    const Database = (await import('better-sqlite3')).default;
+    const db = new Database(dbPath);
+
+    try {
+      const tableCheck = db.prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='embeddings';"
+      ).get();
+      assert.ok(tableCheck, 'embeddings table should exist');
+    } finally {
+      db.close();
+    }
+  } finally {
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test('ON DELETE CASCADE: deleting memory also deletes its embeddings', async () => {
+  const cacheDir = await tempDir('embed-cascade');
+
+  try {
+    // Create index first
+    createIndexDatabase(cacheDir);
+
+    // Insert a memory
+    const dbPath = join(cacheDir, 'index.sqlite');
+    const Database = (await import('better-sqlite3')).default;
+    const db = new Database(dbPath);
+    db.pragma('journal_mode=WAL');
+    db.pragma('foreign_keys = ON');
+
+    try {
+      db.prepare(`
+        INSERT INTO memories (id, kind, scope, content, summary, source_json, evidence_json,
+          confidence, importance, veracity, tags_json, created_at, updated_at,
+          supersedes_json, file_path, line_no, repo_commit)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        'mem_cascade', 'episode', 'global', 'Test content for cascade.', 'Test summary.',
+        '{}', '[]', 1.0, 0.5, 'stated', '[]',
+        '2026-06-01T10:00:00.000Z', '2026-06-01T10:00:00.000Z',
+        '[]', 'test.jsonl', 1, 'cascade-test'
+      );
+
+      // Get the rowid of the inserted memory
+      const memRow = db.prepare("SELECT rowid FROM memories WHERE id = 'mem_cascade'").get();
+      assert.ok(memRow, 'memory should exist');
+
+      // Insert an embedding linked to this memory
+      const { insertEmbeddings } = await import('../src/embedding-cache.js');
+      const vec = new Float32Array([0.1, 0.2, 0.3]);
+      insertEmbeddings(db, [memRow.rowid], [vec], 'test-model', 3);
+
+      // Verify embedding exists
+      let embCheck = db.prepare("SELECT COUNT(*) as c FROM embeddings WHERE memory_rowid = ?").get(memRow.rowid);
+      assert.equal(embCheck.c, 1, 'embedding should exist before delete');
+
+      // Delete the memory — should cascade to embeddings
+      db.prepare("DELETE FROM memories WHERE id = 'mem_cascade'").run();
+
+      // Verify embedding was cascade-deleted
+      embCheck = db.prepare("SELECT COUNT(*) as c FROM embeddings WHERE memory_rowid = ?").get(memRow.rowid);
+      assert.equal(embCheck.c, 0, 'embedding should be cascade-deleted');
+    } finally {
+      db.close();
+    }
+  } finally {
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test('rebuildIndexWithEmbeddings with mock provider populates embeddings', async () => {
+  const repoDir = await tempDir('embed-mock');
+  const cacheDir = await tempDir('embed-mock-cache');
+
+  try {
+    const records = [
+      makeRecord({ id: 'mem_001', content: 'First memory for embedding test.', summary: 'First summary.' }),
+      makeRecord({ id: 'mem_002', content: 'Second memory for embedding test.', summary: 'Second summary.' }),
+      makeRecord({ id: 'mem_003', content: 'Third memory for embedding test.', summary: 'Third summary.' })
+    ];
+    await writeJSONLFile(repoDir, 'memories.jsonl', records);
+
+    const mockProvider = createMockProvider(32);
+    const result = await rebuildIndexWithEmbeddings(repoDir, cacheDir, {
+      repoHead: 'embed-test',
+      embeddingProvider: mockProvider
+    });
+
+    assert.equal(result.recordCount, 3);
+    assert.equal(result.embeddingsGenerated, 3);
+    assert.equal(result.embeddingsFailed, 0);
+
+    // Verify embeddings were stored
+    const embStatus = getEmbeddingStatus(cacheDir);
+    assert.equal(embStatus.count, 3);
+    assert.equal(embStatus.model, 'mock');
+    assert.equal(embStatus.dimensions, 32);
+    assert.ok(embStatus.exists);
+  } finally {
+    await rm(repoDir, { recursive: true, force: true });
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test('rebuildIndexWithEmbeddings with noop provider skips embeddings', async () => {
+  const repoDir = await tempDir('embed-noop');
+  const cacheDir = await tempDir('embed-noop-cache');
+
+  try {
+    const records = [
+      makeRecord({ id: 'mem_001', content: 'Only record.' })
+    ];
+    await writeJSONLFile(repoDir, 'memories.jsonl', records);
+
+    const result = await rebuildIndexWithEmbeddings(repoDir, cacheDir, {
+      repoHead: 'noop-test',
+      embeddingProvider: noopProvider
+    });
+
+    assert.equal(result.recordCount, 1);
+    assert.equal(result.embeddingsGenerated, 0);
+    assert.equal(result.embeddingsFailed, 0);
+
+    // Verify no embeddings were stored (table exists from DDL but count is 0)
+    const embStatus = getEmbeddingStatus(cacheDir);
+    assert.equal(embStatus.count, 0);
+    assert.equal(embStatus.model, null);
+  } finally {
+    await rm(repoDir, { recursive: true, force: true });
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test('rebuildIndexWithEmbeddings gracefully handles provider failure', async () => {
+  const repoDir = await tempDir('embed-fail');
+  const cacheDir = await tempDir('embed-fail-cache');
+
+  try {
+    const records = [
+      makeRecord({ id: 'mem_001', content: 'Record that will fail to embed.' }),
+      makeRecord({ id: 'mem_002', content: 'Another record that will fail.' })
+    ];
+    await writeJSONLFile(repoDir, 'memories.jsonl', records);
+
+    // Create a provider that always fails
+    const failingProvider = {
+      name: 'failing',
+      dimensions: 32,
+      async embed() {
+        throw new Error('Simulated embedding failure');
+      }
+    };
+
+    const logs = [];
+    const result = await rebuildIndexWithEmbeddings(repoDir, cacheDir, {
+      repoHead: 'fail-test',
+      embeddingProvider: failingProvider,
+      logger: (msg) => logs.push(msg)
+    });
+
+    // FTS index should still succeed
+    assert.equal(result.recordCount, 2);
+    // All embeddings should fail
+    assert.equal(result.embeddingsGenerated, 0);
+    assert.equal(result.embeddingsFailed, 2);
+
+    // Verify failure was logged
+    assert.ok(logs.some(msg => msg.includes('embed:batch-failed')), 'should log batch failure');
+  } finally {
+    await rm(repoDir, { recursive: true, force: true });
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test('searchIndexHybrid returns results with _hybridScore field', async () => {
+  const repoDir = await tempDir('hybrid-score');
+  const cacheDir = await tempDir('hybrid-score-cache');
+
+  try {
+    // Create records with distinct, searchable content
+    const records = [
+      makeRecord({ id: 'mem_a', content: 'Python is a widely used scripting language for automation.' }),
+      makeRecord({ id: 'mem_b', content: 'JavaScript is essential for frontend web development.' }),
+      makeRecord({ id: 'mem_c', content: 'Rust provides memory safety without garbage collection.' })
+    ];
+    await writeJSONLFile(repoDir, 'memories.jsonl', records);
+
+    // Build index with embeddings
+    const mockProvider = createMockProvider(32);
+    await rebuildIndexWithEmbeddings(repoDir, cacheDir, {
+      repoHead: 'hybrid-score-test',
+      embeddingProvider: mockProvider
+    });
+
+    // Search with hybrid mode
+    const results = await searchIndexHybrid(cacheDir, {
+      query: 'Python scripting language',
+      embeddingProvider: mockProvider,
+      limit: 10
+    });
+
+    assert.ok(results.length > 0, 'should return results');
+
+    // All results should have _hybridScore
+    for (const result of results) {
+      assert.ok(typeof result._hybridScore === 'number', `result ${result.id} should have _hybridScore`);
+    }
+
+    // mem_a should be the top result for a Python query
+    assert.equal(results[0].id, 'mem_a', 'Python record should be top result');
+  } finally {
+    await rm(repoDir, { recursive: true, force: true });
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
 test('rebuildIndex indexes JSONL files in nested directories', async () => {
   const repoDir = await tempDir('recursive-repo');
   const cacheDir = await tempDir('recursive-cache');
@@ -735,6 +965,38 @@ test('rebuildIndex sends parse and validation diagnostics to logger', async () =
     assert.equal(result.recordCount, 0);
     assert.ok(logs.some(message => message.includes('invalid JSON')));
     assert.ok(logs.some(message => message.includes('validation failed')));
+  } finally {
+    await rm(repoDir, { recursive: true, force: true });
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test('searchIndexHybrid with no embeddings falls back to FTS-only', async () => {
+  const repoDir = await tempDir('hybrid-fallback');
+  const cacheDir = await tempDir('hybrid-fallback-cache');
+
+  try {
+    const records = [
+      makeRecord({ id: 'mem_a', content: 'Python scripting language for automation tasks.' }),
+      makeRecord({ id: 'mem_b', content: 'JavaScript for building interactive web applications.' })
+    ];
+    await writeJSONLFile(repoDir, 'memories.jsonl', records);
+
+    // Build index without embeddings (no provider, so FTS-only)
+    rebuildIndex(repoDir, cacheDir, { repoHead: 'hybrid-fallback-test' });
+
+    // Search with noop provider (dimensions=0 triggers FTS-only fallback)
+    const results = await searchIndexHybrid(cacheDir, {
+      query: 'Python scripting',
+      embeddingProvider: noopProvider,
+      limit: 10
+    });
+
+    assert.ok(results.length > 0, 'should return FTS results');
+    assert.equal(results[0].id, 'mem_a', 'Python record should be top FTS result');
+
+    // Results should still have _rank from FTS but may or may not have _hybridScore
+    assert.ok(typeof results[0]._rank === 'number', 'should have _rank from FTS');
   } finally {
     await rm(repoDir, { recursive: true, force: true });
     await rm(cacheDir, { recursive: true, force: true });
