@@ -104,6 +104,9 @@ export function parseRememberArgs(args) {
     } else if (arg === '--supersedes') {
       supersedes.push(requireValue(args, index, '--supersedes'));
       index += 2;
+    } else if (arg === '--skip-redaction') {
+      options.skipRedaction = true;
+      index += 1;
     } else if (arg.startsWith('--')) {
       // 未知标志：严格解析，立即报错
       throw new Error(`unknown option: ${arg}`);

@@ -5,6 +5,8 @@ import { prepareCommand } from './commands/prepare.js';
 import { contextCommand } from './commands/context.js';
 import { retainCommand } from './commands/retain.js';
 import { flushCommand } from './commands/flush.js';
+import { doctorCommand } from './commands/doctor.js';
+import { redactCommand } from './commands/redact.js';
 import {
   readMemories,
   readJSONLStream,
@@ -31,6 +33,10 @@ try {
     await retainCommand(args);
   } else if (command === 'flush') {
     await flushCommand(args);
+  } else if (command === 'doctor') {
+    process.exitCode = await doctorCommand(args);
+  } else if (command === 'redact') {
+    redactCommand(args);
   } else if (command === 'list') {
     await listMemories();
   } else if (command === 'export') {
@@ -94,6 +100,8 @@ Usage:
   mem-sync retain --transcript-file <path> --pending --device <id> [--project-id id] [--agent-id id]
   mem-sync context [--mode startup|recall] [--format markdown|json|memories] [--limit n] [--project-id id] [--project path]
   mem-sync flush [--remote <url>]
+  mem-sync redact --check
+  mem-sync doctor
   mem-sync list
   mem-sync export
   mem-sync index rebuild

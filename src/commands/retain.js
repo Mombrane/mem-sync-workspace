@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { redactContent } from '../redaction-engine.js';
 import { join } from 'node:path';
 import { extractCandidates } from '../retain-engine.js';
 import { normalizeMemoryInput, createCanonicalKey } from '../schema.js';
@@ -58,6 +59,17 @@ export async function retainCommand(args) {
   const records = [];
   for (const candidate of candidates) {
     candidate.source.device = deviceId;
+
+    // Redaction check per candidate
+    if (!options.skipRedaction) {
+      const redactResult = redactContent(candidate.content);
+      if (redactResult.blocked) {
+        const matchedRules = redactResult.matches.map(m => m.rule).join(', ');
+        console.error(`[mem-sync:redact] blocked candidate: ${matchedRules}`);
+        continue; // skip this candidate, don't abort all
+      }
+    }
+
     const memory = normalizeMemoryInput(candidate);
     records.push(memory);
   }
@@ -115,6 +127,9 @@ export function parseRetainArgs(args) {
     } else if (arg === '--agent-id') {
       options.agentId = requireValue(args, index, '--agent-id');
       index += 2;
+    } else if (arg === '--skip-redaction') {
+      options.skipRedaction = true;
+      index += 1;
     } else if (arg.startsWith('--')) {
       throw new Error(`unknown option: ${arg}`);
     } else {

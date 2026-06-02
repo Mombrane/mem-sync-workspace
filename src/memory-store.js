@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { normalizeContent, normalizeMemoryInput } from './schema.js';
 import { appendJSONL } from './repo-store.js';
+import { redactContent } from './redaction-engine.js';
 
 export function normalizeText(text) {
   return normalizeContent(text);
@@ -9,6 +10,15 @@ export function normalizeText(text) {
 export function createMemoryStore({ now = () => new Date(), logger = defaultLogger, storePath } = {}) {
   return {
     async add(text, options = {}) {
+      // Redaction check: scan for secrets before any processing
+      if (!options.skipRedaction) {
+        const redactResult = redactContent(text);
+        if (redactResult.blocked) {
+          const matchedRules = redactResult.matches.map(m => m.rule).join(', ');
+          throw new Error(`content blocked by redaction rule: ${matchedRules}`);
+        }
+      }
+
       log(logger, '[mem-sync:schema] normalize:start');
       const normalizedText = normalizeText(text);
       const legacyScope = options.scope ?? 'global';
