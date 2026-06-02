@@ -1,9 +1,9 @@
 {
-  "lastCommit": "66132fef9005ab48a413da872c693c95fd72f99e",
-  "lastCheckTime": "2026-06-02T17:00:52.458Z",
+  "lastCommit": "2b2cefd7a1500d62e3b2211168cceb5da494152b",
+  "lastCheckTime": "2026-06-02T22:11:29.052Z",
   "totalTests": 0,
   "passed": 0,
   "failed": 0,
   "followUpPending": false,
-  "mode": "full"
+  "mode": "smoke"
 }
