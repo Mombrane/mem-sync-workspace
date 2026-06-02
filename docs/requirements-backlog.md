@@ -6,11 +6,11 @@
 ---
 
 ## 📊 需求统计
-- 总计: 2 个待处理需求
+- 总计: 1 个待处理需求
 - 🔴 高优先级: 0 个
-- 🟡 中优先级: 1 个
+- 🟡 中优先级: 0 个
 - 🟢 低优先级: 1 个
-- ✅ 已完成: 15 个
+- ✅ 已完成: 16 个
 
 ---
 
@@ -23,7 +23,7 @@
 ## 🟡 中优先级
 | ID | 需求描述 | 来源文档 | 状态 | 依赖 | 子需求 |
 |----|----------|----------|------|------|--------|
-| REQ-003 | encrypted repo support | p2-backlog.md | ⏳ 待处理 | - | - |
+| REQ-003 | encrypted repo support | p2-backlog.md | ✅ 已完成 | - | - |
 
 ## 🟢 低优先级
 | ID | 需求描述 | 来源文档 | 状态 | 依赖 | 子需求 |
@@ -50,6 +50,7 @@
 | REQ-000 | MMR rerank for recall engine | 2026-06-02 | completion-plan.md | [archive](../openspec/changes/archive/) |
 | REQ-001 | LLM extractor/reranker | 2026-06-02 | p2-backlog.md | [archive](../openspec/changes/archive/2026-06-02-llm-extractor-reranker) |
 | REQ-002 | generated skills | 2026-06-02 | p2-backlog.md | [archive](../openspec/changes/archive/2026-06-02-generated-skills) |
+| REQ-003 | encrypted repo support | 2026-06-02 | p2-backlog.md | [archive](../openspec/changes/encrypted-repo-support) |
 
 ---
 
