@@ -10,7 +10,7 @@ import { redactCommand } from './commands/redact.js';
 import { compactCommand } from './commands/compact.js';
 import { summarizeCommand } from './commands/summarize.js';
 import { skillsCommand } from './commands/skills.js';
-import { reviewCommand } from './commands/review.js';
+import { reviewCommand, approveCommand, rejectCommand } from './commands/review.js';
 import { initCommand } from './commands/init.js';
 import { syncCommand } from './commands/sync.js';
 import { statusCommand as repoStatusCommand } from './commands/status.js';
@@ -55,7 +55,7 @@ try {
   } else if (command === 'skills') {
     await skillsCommand(args);
   } else if (command === 'review') {
-    await reviewCommand(args);
+    await handleReviewCommand(args);
   } else if (command === 'init') {
     await initCommand(args);
   } else if (command === 'sync') {
@@ -117,6 +117,24 @@ async function exportMemories() {
   console.log(JSON.stringify({ memories }, null, 2));
 }
 
+/**
+ * review 子命令路由
+ */
+async function handleReviewCommand(args) {
+  const [subcommand, ...rest] = args;
+  if (subcommand === 'pending') {
+    await reviewCommand(rest);
+  } else if (subcommand === 'approve') {
+    await approveCommand(rest);
+  } else if (subcommand === 'reject') {
+    rejectCommand(rest);
+  } else {
+    console.error(`mem-sync: unknown review subcommand: ${subcommand ?? '(none)'}`);
+    console.error('Available: review pending | review approve | review reject');
+    process.exitCode = 1;
+  }
+}
+
 function handleIndexCommand(args) {
   const [subcommand, ...rest] = args;
   if (subcommand === 'rebuild') {
@@ -154,6 +172,10 @@ Usage:
   mem-sync skills list [--repo <path>]
   mem-sync skills show <name> [--repo <path>]
   mem-sync review pending [--kind <kind>] [--full] [--repo <path>]
+  mem-sync review approve <id> [--repo <path>]
+  mem-sync review approve --all [--repo <path>]
+  mem-sync review reject <id> [--repo <path>]
+  mem-sync review reject --all [--repo <path>]
   mem-sync key status [--repo <path>]     Show encryption configuration
   mem-sync key export [--repo <path>]     Show private key path for backup
   mem-sync init --encrypt [--password]    Initialize with encryption enabled

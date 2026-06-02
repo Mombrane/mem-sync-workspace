@@ -131,6 +131,139 @@ export function readPendingFiles(pendingDir) {
 }
 
 /**
+ * 在 pendingDir 目录中查找并移除指定 id 的记录。
+ *
+ * 扫描目录中所有 .jsonl 和 .json 文件，找到匹配记录后从文件中移除。
+ * 空文件保留（不删除），匹配当前 forget.js 的 JSONL 行为。
+ * 只移除第一个匹配项，匹配后立即返回。
+ *
+ * @param {string} pendingDir - pending 目录路径
+ * @param {string} id - 要查找的记忆记录 ID
+ * @returns {{ found: boolean, record: object|null, filePath: string|null }}
+ */
+export function findAndRemoveFromPending(pendingDir, id) {
+  let entries;
+  try {
+    entries = readdirSync(pendingDir);
+  } catch (err) {
+    if (err.code === 'ENOENT') return { found: false, record: null, filePath: null };
+    throw err;
+  }
+
+  for (const entry of entries) {
+    if (!entry.endsWith('.json') && !entry.endsWith('.jsonl')) continue;
+
+    const filePath = join(pendingDir, entry);
+    let raw;
+    try {
+      raw = readFileSync(filePath, 'utf8');
+    } catch {
+      continue;
+    }
+
+    if (entry.endsWith('.jsonl')) {
+      const lines = raw.split('\n').filter(l => l.trim());
+      let foundRecord = null;
+      const remaining = [];
+      for (const line of lines) {
+        try {
+          const r = JSON.parse(line.trim());
+          if (!foundRecord && r.id === id) {
+            foundRecord = r;
+          } else {
+            remaining.push(line);
+          }
+        } catch {
+          // 保留损坏的行（不匹配的记录静默保留）
+          remaining.push(line);
+        }
+      }
+      if (foundRecord) {
+        writeFileSync(filePath, remaining.join('\n') + (remaining.length > 0 ? '\n' : ''), 'utf8');
+        return { found: true, record: foundRecord, filePath };
+      }
+    } else if (entry.endsWith('.json')) {
+      let parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        continue;
+      }
+      const records = Array.isArray(parsed) ? parsed : [parsed];
+      let foundRecord = null;
+      const remaining = records.filter(r => {
+        if (!foundRecord && r.id === id) {
+          foundRecord = r;
+          return false;
+        }
+        return true;
+      });
+      if (foundRecord) {
+        if (remaining.length === 0) {
+          // 保留空文件（与 JSONL 行为一致，不删除）
+          writeFileSync(filePath, '[]\n', 'utf8');
+        } else {
+          writeFileSync(
+            filePath,
+            JSON.stringify(remaining.length === 1 ? remaining[0] : remaining, null, 2) + '\n',
+            'utf8'
+          );
+        }
+        return { found: true, record: foundRecord, filePath };
+      }
+    }
+  }
+
+  return { found: false, record: null, filePath: null };
+}
+
+/**
+ * 移除 pendingDir 目录中所有记录。
+ *
+ * 清除所有 .jsonl 和 .json 文件的内容，保留文件本身。
+ *
+ * @param {string} pendingDir - pending 目录路径
+ * @returns {{ count: number, ids: string[] }}
+ */
+export function removeAllPending(pendingDir) {
+  const records = readPendingFiles(pendingDir);
+  if (records.length === 0) {
+    return { count: 0, ids: [] };
+  }
+
+  const ids = records.map(r => r.id);
+
+  let entries;
+  try {
+    entries = readdirSync(pendingDir);
+  } catch (err) {
+    // readPendingFiles 已确认目录存在且可读，这里再次出错属极端情况
+    if (err.code === 'ENOENT') return { count: 0, ids: [] };
+    throw err;
+  }
+
+  for (const entry of entries) {
+    const filePath = join(pendingDir, entry);
+    if (entry.endsWith('.jsonl')) {
+      try {
+        writeFileSync(filePath, '', 'utf8');
+      } catch {
+        // 无法写入个别文件不阻塞流程
+      }
+    } else if (entry.endsWith('.json')) {
+      try {
+        writeFileSync(filePath, '[]\n', 'utf8');
+      } catch {
+        // 无法写入个别文件不阻塞流程
+      }
+    }
+    // 忽略非 .json/.jsonl 文件
+  }
+
+  return { count: ids.length, ids };
+}
+
+/**
  * 将 pending/ 目录中的待合并记录合并到 JSONL 存储。
  *
  * 合并流程：

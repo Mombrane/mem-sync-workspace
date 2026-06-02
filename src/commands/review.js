@@ -1,6 +1,8 @@
 import path from 'node:path';
 import os from 'node:os';
-import { readPendingFiles } from '../merge.js';
+import { readPendingFiles, findAndRemoveFromPending, removeAllPending } from '../merge.js';
+import { normalizeMemoryInput } from '../schema.js';
+import { appendJSONL } from '../repo-store.js';
 
 const HOME = os.homedir();
 const DEFAULT_REPO = path.join(HOME, '.memcli', 'default');
@@ -46,14 +48,13 @@ export function parseReviewArgs(args) {
   let kind;
   let full = false;
   let repo = DEFAULT_REPO;
-  let hasPendingSubcommand = false;
 
   let index = 0;
   while (index < args.length) {
     const arg = args[index];
 
     if (arg === 'pending') {
-      hasPendingSubcommand = true;
+      // 兼容直接调用 review pending 的情况（CLI 路由已剥离子命令）
       index += 1;
     } else if (arg === '--kind') {
       const raw = args[index + 1];
@@ -77,10 +78,6 @@ export function parseReviewArgs(args) {
     } else {
       index += 1;
     }
-  }
-
-  if (!hasPendingSubcommand) {
-    throw new Error('review requires the "pending" subcommand.');
   }
 
   return { repo, kind, full };
@@ -135,4 +132,168 @@ function preview(text) {
 function formatSource(source) {
   if (typeof source === 'string') return source;
   return source?.agent ?? source?.type ?? 'unknown';
+}
+
+/**
+ * approve 命令：批准 pending 记录并合并到 memories.jsonl。
+ *
+ * 支持两种模式：
+ * - approve <id>：批准单条记录
+ * - approve --all：批准所有 pending 记录
+ *
+ * 批准后记录从 pending/ 移除并追加到 memories.jsonl。
+ *
+ * @param {string[]} args - 命令行参数
+ * @returns {Promise<void>}
+ */
+export async function approveCommand(args) {
+  const opts = parseApproveArgs(args);
+  const pendingDir = path.join(opts.repo, 'pending');
+  const memoriesPath = path.join(opts.repo, 'memories.jsonl');
+
+  if (opts.all) {
+    const records = readPendingFiles(pendingDir);
+    const ids = [];
+
+    for (const record of records) {
+      const normalized = normalizeMemoryInput(record);
+      await appendJSONL(normalized, memoriesPath);
+      ids.push(normalized.id);
+    }
+
+    const removed = removeAllPending(pendingDir);
+
+    console.log(JSON.stringify({ approved: ids, count: ids.length }));
+    return;
+  }
+
+  // Single ID approve
+  const result = findAndRemoveFromPending(pendingDir, opts.id);
+  if (!result.found) {
+    console.error('mem-sync: no pending record with id: ' + opts.id);
+    process.exitCode = 1;
+    return;
+  }
+
+  const normalized = normalizeMemoryInput(result.record);
+  await appendJSONL(normalized, memoriesPath);
+
+  console.log(JSON.stringify({ approved: opts.id }));
+}
+
+/**
+ * 解析 approve 命令的参数。
+ *
+ * @param {string[]} args
+ * @returns {{ id: string|undefined, all: boolean, repo: string }}
+ */
+export function parseApproveArgs(args) {
+  let id;
+  let all = false;
+  let repo = DEFAULT_REPO;
+
+  let index = 0;
+  while (index < args.length) {
+    const arg = args[index];
+    if (arg === '--all') {
+      all = true;
+      index += 1;
+    } else if (arg === '--repo') {
+      const raw = args[index + 1];
+      if (raw === undefined) {
+        throw new Error('--repo requires a value.');
+      }
+      repo = raw;
+      index += 2;
+    } else if (arg.startsWith('--')) {
+      throw new Error(`unknown option: ${arg}`);
+    } else {
+      id = arg;
+      index += 1;
+    }
+  }
+
+  if (!id && !all) {
+    throw new Error(
+      'approve requires a memory id or --all flag. Usage: mem-sync approve <id> [--repo <path>]'
+    );
+  }
+
+  return { id, all, repo };
+}
+
+/**
+ * reject 命令：拒绝 pending 记录，从 pending 目录移除。
+ *
+ * 支持两种模式：
+ * - reject <id>：拒绝单条记录
+ * - reject --all：拒绝所有 pending 记录
+ *
+ * 拒绝后记录从 pending/ 移除，不会写入 memories.jsonl。
+ *
+ * @param {string[]} args - 命令行参数
+ * @returns {void}
+ */
+export function rejectCommand(args) {
+  const opts = parseRejectArgs(args);
+  const pendingDir = path.join(opts.repo, 'pending');
+
+  if (opts.all) {
+    const removed = removeAllPending(pendingDir);
+    console.log(
+      JSON.stringify({ rejected: removed.ids, count: removed.count })
+    );
+    return;
+  }
+
+  // Single ID reject
+  const result = findAndRemoveFromPending(pendingDir, opts.id);
+  if (!result.found) {
+    console.error('mem-sync: no pending record with id: ' + opts.id);
+    process.exitCode = 1;
+    return;
+  }
+
+  console.log(JSON.stringify({ rejected: opts.id }));
+}
+
+/**
+ * 解析 reject 命令的参数。
+ *
+ * @param {string[]} args
+ * @returns {{ id: string|undefined, all: boolean, repo: string }}
+ */
+export function parseRejectArgs(args) {
+  let id;
+  let all = false;
+  let repo = DEFAULT_REPO;
+
+  let index = 0;
+  while (index < args.length) {
+    const arg = args[index];
+    if (arg === '--all') {
+      all = true;
+      index += 1;
+    } else if (arg === '--repo') {
+      const raw = args[index + 1];
+      if (raw === undefined) {
+        throw new Error('--repo requires a value.');
+      }
+      repo = raw;
+      index += 2;
+    } else if (arg.startsWith('--')) {
+      throw new Error(`unknown option: ${arg}`);
+    } else {
+      id = arg;
+      index += 1;
+    }
+  }
+
+  if (!id && !all) {
+    throw new Error(
+      'reject requires a memory id or --all flag. Usage: mem-sync reject <id> [--repo <path>]'
+    );
+  }
+
+  return { id, all, repo };
 }

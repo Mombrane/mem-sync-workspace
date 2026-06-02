@@ -1,6 +1,6 @@
-import { existsSync, readFileSync, writeFileSync, unlinkSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { resolveStorePath, readJSONL, writeJSONL } from '../repo-store.js';
+import { findAndRemoveFromPending } from '../merge.js';
 
 /**
  * mem-sync forget <id> — soft-delete a memory record.
@@ -38,65 +38,9 @@ export async function forgetCommand(args) {
 
   // 1. Check pending/ first
   const pendingDir = join(memSyncHome, 'pending');
+  const result = findAndRemoveFromPending(pendingDir, id);
 
-  // Scan pending files directly to find and remove the record
-  let foundInPending = false;
-  try {
-    const entries = readdirSync(pendingDir).filter(
-      f => f.endsWith('.json') || f.endsWith('.jsonl')
-    );
-
-    for (const entry of entries) {
-      const filePath = join(pendingDir, entry);
-      let raw;
-      try {
-        raw = readFileSync(filePath, 'utf8');
-      } catch {
-        continue;
-      }
-
-      if (entry.endsWith('.jsonl')) {
-        const lines = raw.split('\n').filter(l => l.trim());
-        const remaining = lines.filter(line => {
-          try {
-            return JSON.parse(line).id !== id;
-          } catch {
-            return false;
-          }
-        });
-        if (remaining.length < lines.length) {
-          foundInPending = true;
-          writeFileSync(filePath, remaining.join('\n') + (remaining.length > 0 ? '\n' : ''), 'utf8');
-          break;
-        }
-      } else if (entry.endsWith('.json')) {
-        try {
-          const parsed = JSON.parse(raw);
-          const records = Array.isArray(parsed) ? parsed : [parsed];
-          const remaining = records.filter(r => r.id !== id);
-          if (remaining.length < records.length) {
-            foundInPending = true;
-            if (remaining.length === 0) {
-              unlinkSync(filePath);
-            } else {
-              writeFileSync(
-                filePath,
-                JSON.stringify(remaining.length === 1 ? remaining[0] : remaining) + '\n',
-                'utf8'
-              );
-            }
-            break;
-          }
-        } catch {
-          continue;
-        }
-      }
-    }
-  } catch {
-    // pending dir may not exist — that's fine
-  }
-
-  if (foundInPending) {
+  if (result.found) {
     console.log(JSON.stringify({ forgotten: id, action: 'removed-from-pending' }));
     return;
   }

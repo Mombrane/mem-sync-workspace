@@ -115,6 +115,149 @@ test('review pending 无记录时显示友好提示', async (t) => {
   assert.ok(result.stdout.includes('No pending records'), '应该提示无记录');
 });
 
+// ─── Review Approve 命令 ────────────────────────────────────────────
+
+test('review approve 单条记录从 pending 移动到 memories.jsonl', async (t) => {
+  const env = createTestHome();
+  t.after(() => cleanupTestHome(env));
+
+  // 创建 pending 记录
+  const pendingDir = join(env.repo, 'pending');
+  mkdirSync(pendingDir, { recursive: true });
+
+  writeJSONL(join(pendingDir, 'device-001.jsonl'), [
+    makeRecord({ id: 'mem_approve_001', content: '要批准的记忆', kind: 'preference' }),
+    makeRecord({ id: 'mem_approve_002', content: '保留的记忆', kind: 'episode' }),
+  ]);
+
+  // 批准第一条
+  const result = runCli(env.repo, ['review', 'approve', 'mem_approve_001', '--repo', env.repo]);
+  assert.equal(result.status, 0, `approve 失败: ${result.stderr}`);
+
+  // 验证输出
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.approved, 'mem_approve_001');
+
+  // 验证 pending 只剩第二条
+  const pendingRecords = readJSONL(join(pendingDir, 'device-001.jsonl'));
+  assert.equal(pendingRecords.length, 1);
+  assert.equal(pendingRecords[0].id, 'mem_approve_002');
+
+  // 验证 memories.jsonl 包含批准的记录
+  const memories = readJSONL(join(env.repo, 'memories.jsonl'));
+  const approved = memories.find(m => m.id === 'mem_approve_001');
+  assert.ok(approved, 'memories.jsonl 应该包含批准的记录');
+  assert.equal(approved.content, '要批准的记忆');
+  assert.ok(approved.canonicalKey, '应该有 canonicalKey');
+});
+
+test('review approve --all 批准所有 pending 记录', async (t) => {
+  const env = createTestHome();
+  t.after(() => cleanupTestHome(env));
+
+  const pendingDir = join(env.repo, 'pending');
+  mkdirSync(pendingDir, { recursive: true });
+
+  writeJSONL(join(pendingDir, 'device-001.jsonl'), [
+    makeRecord({ id: 'mem_all_001', content: 'First' }),
+    makeRecord({ id: 'mem_all_002', content: 'Second' }),
+  ]);
+  writeJSONL(join(pendingDir, 'device-002.jsonl'), [
+    makeRecord({ id: 'mem_all_003', content: 'Third' }),
+  ]);
+
+  const result = runCli(env.repo, ['review', 'approve', '--all', '--repo', env.repo]);
+  assert.equal(result.status, 0, `approve --all 失败: ${result.stderr}`);
+
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.count, 3);
+  assert.deepStrictEqual(output.approved.sort(), ['mem_all_001', 'mem_all_002', 'mem_all_003']);
+
+  // 验证 pending 已清空
+  const pending1 = readJSONL(join(pendingDir, 'device-001.jsonl'));
+  const pending2 = readJSONL(join(pendingDir, 'device-002.jsonl'));
+  assert.equal(pending1.length, 0);
+  assert.equal(pending2.length, 0);
+
+  // 验证 memories.jsonl 包含所有记录
+  const memories = readJSONL(join(env.repo, 'memories.jsonl'));
+  assert.equal(memories.length, 3);
+});
+
+test('review approve 不存在的 ID 报错', async (t) => {
+  const env = createTestHome();
+  t.after(() => cleanupTestHome(env));
+
+  mkdirSync(join(env.repo, 'pending'), { recursive: true });
+
+  const result = runCli(env.repo, ['review', 'approve', 'mem_nonexistent', '--repo', env.repo]);
+  assert.notEqual(result.status, 0, 'approve 不存在的 ID 应该失败');
+  assert.ok(result.stderr.includes('no pending record'));
+});
+
+// ─── Review Reject 命令 ────────────────────────────────────────────
+
+test('review reject 单条记录从 pending 移除', async (t) => {
+  const env = createTestHome();
+  t.after(() => cleanupTestHome(env));
+
+  const pendingDir = join(env.repo, 'pending');
+  mkdirSync(pendingDir, { recursive: true });
+
+  writeJSONL(join(pendingDir, 'device-001.jsonl'), [
+    makeRecord({ id: 'mem_reject_001', content: '要拒绝的记忆' }),
+    makeRecord({ id: 'mem_reject_002', content: '保留的记忆' }),
+  ]);
+
+  const result = runCli(env.repo, ['review', 'reject', 'mem_reject_001', '--repo', env.repo]);
+  assert.equal(result.status, 0, `reject 失败: ${result.stderr}`);
+
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.rejected, 'mem_reject_001');
+
+  // 验证 pending 只剩第二条
+  const pendingRecords = readJSONL(join(pendingDir, 'device-001.jsonl'));
+  assert.equal(pendingRecords.length, 1);
+  assert.equal(pendingRecords[0].id, 'mem_reject_002');
+
+  // 验证没有创建 memories.jsonl
+  const { existsSync } = await import('node:fs');
+  assert.equal(existsSync(join(env.repo, 'memories.jsonl')), false);
+});
+
+test('review reject --all 清空所有 pending', async (t) => {
+  const env = createTestHome();
+  t.after(() => cleanupTestHome(env));
+
+  const pendingDir = join(env.repo, 'pending');
+  mkdirSync(pendingDir, { recursive: true });
+
+  writeJSONL(join(pendingDir, 'device-001.jsonl'), [
+    makeRecord({ id: 'mem_r_001' }),
+    makeRecord({ id: 'mem_r_002' }),
+  ]);
+
+  const result = runCli(env.repo, ['review', 'reject', '--all', '--repo', env.repo]);
+  assert.equal(result.status, 0);
+
+  const output = JSON.parse(result.stdout);
+  assert.equal(output.count, 2);
+
+  // 验证 pending 已清空
+  const pendingRecords = readJSONL(join(pendingDir, 'device-001.jsonl'));
+  assert.equal(pendingRecords.length, 0);
+});
+
+test('review reject 不存在的 ID 报错', async (t) => {
+  const env = createTestHome();
+  t.after(() => cleanupTestHome(env));
+
+  mkdirSync(join(env.repo, 'pending'), { recursive: true });
+
+  const result = runCli(env.repo, ['review', 'reject', 'mem_nonexistent', '--repo', env.repo]);
+  assert.notEqual(result.status, 0, 'reject 不存在的 ID 应该失败');
+});
+
 // ─── Forget 命令 ─────────────────────────────────────────────────────
 
 test('forget 软删除指定记忆', async (t) => {
