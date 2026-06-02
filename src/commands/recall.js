@@ -5,6 +5,8 @@ import {
   getIndexStatus
 } from '../index-store.js';
 import { resolveEmbeddingProvider } from '../embedding-provider.js';
+import { resolveLLMProvider } from '../llm-provider.js';
+import { rerankWithLLM } from '../llm-rerank.js';
 import { MEMORY_KINDS, MEMORY_SCOPES, MEMORY_VERACITIES } from '../schema.js';
 import {
   requireValue,
@@ -74,6 +76,20 @@ export async function recallCommand(args) {
   } else {
     // Default: fts
     results = searchIndex(cacheDir, { query, ...searchOptions });
+  }
+
+  // LLM 重排：如果启用 --llm-rerank，使用 LLM 重新排序结果
+  if (searchOptions.llmRerank) {
+    try {
+      const llmProvider = resolveLLMProvider();
+      results = await rerankWithLLM(results, query, llmProvider, {
+        llmWeight: searchOptions.llmWeight,
+        llmTopN: searchOptions.llmTopN ?? searchOptions.limit * 3,
+      });
+    } catch (err) {
+      // LLM 重排失败不影响原始结果——输出警告继续
+      process.stderr.write(`Warning: LLM reranking failed: ${err.message}\n`);
+    }
   }
 
   // 按格式输出结果
@@ -183,6 +199,23 @@ export function parseRecallArgs(args) {
       }
       searchOptions.mmrLambda = validateRange(num, 0, 1, '--mmr-lambda');
       index += 2;
+    } else if (arg === '--llm-rerank') {
+      searchOptions.llmRerank = true;
+      index += 1;
+    } else if (arg === '--llm-weight') {
+      const raw = requireValue(args, index, '--llm-weight');
+      const num = parseFloat(raw);
+      if (!Number.isFinite(num)) {
+        throw new Error('--llm-weight must be a number.');
+      }
+      searchOptions.llmWeight = validateRange(num, 0, 1, '--llm-weight');
+      index += 2;
+    } else if (arg === '--llm-top-n') {
+      searchOptions.llmTopN = validatePositiveInt(
+        requireValue(args, index, '--llm-top-n'),
+        '--llm-top-n'
+      );
+      index += 2;
     } else if (arg.startsWith('--')) {
       // 未知标志：严格解析，立即报错
       throw new Error(`unknown option: ${arg}`);
@@ -206,6 +239,11 @@ export function parseRecallArgs(args) {
   // 当 --mmr 启用但未显式指定 --mmr-lambda 时，使用默认值 0.7
   if (searchOptions.mmr && searchOptions.mmrLambda === undefined) {
     searchOptions.mmrLambda = 0.7;
+  }
+
+  // 当 --llm-rerank 启用但未显式指定 --llm-weight 时，使用默认值 0.7
+  if (searchOptions.llmRerank && searchOptions.llmWeight === undefined) {
+    searchOptions.llmWeight = 0.7;
   }
 
   return { query, format, ...searchOptions };
@@ -240,12 +278,18 @@ function outputMarkdown(results, query) {
     const mmrScoreInfo = typeof memory._mmrScore === 'number'
       ? `, mmr=${memory._mmrScore.toFixed(2)}`
       : '';
+    const llmScoreInfo = typeof memory._llmScore === 'number'
+      ? `, llm=${memory._llmScore.toFixed(2)}`
+      : '';
+    const fusedScoreInfo = typeof memory._fusedScore === 'number'
+      ? `, fused=${memory._fusedScore.toFixed(4)}`
+      : '';
     const tags = memory.tags && memory.tags.length > 0 ? memory.tags : [];
 
     // 标题行
     process.stdout.write(`## ${rank}. [${memory.kind}] ${summaryText}\n`);
     // 分数和 ID
-    process.stdout.write(`**Score:** ${score} (${scoreLabel}${mmrScoreInfo}) | **ID:** \`${memory.id}\`\n`);
+    process.stdout.write(`**Score:** ${score} (${scoreLabel}${mmrScoreInfo}${llmScoreInfo}${fusedScoreInfo}) | **ID:** \`${memory.id}\`\n`);
     // 元数据行 1：scope, kind, confidence, importance
     process.stdout.write(
       `**Scope:** ${memory.scope} | **Kind:** ${memory.kind} | ` +
@@ -317,6 +361,12 @@ function outputMemories(results) {
     const mmrAttr = typeof memory._mmrScore === 'number'
       ? `mmr=${memory._mmrScore.toFixed(2)}`
       : null;
+    const llmAttr = typeof memory._llmScore === 'number'
+      ? `llm=${memory._llmScore.toFixed(2)}`
+      : null;
+    const fusedAttr = typeof memory._fusedScore === 'number'
+      ? `fused=${memory._fusedScore.toFixed(4)}`
+      : null;
 
     const attrs = [
       `id=${memory.id}`,
@@ -329,6 +379,12 @@ function outputMemories(results) {
 
     if (mmrAttr) {
       attrs.splice(1, 0, mmrAttr);
+    }
+    if (llmAttr) {
+      attrs.splice(1, 0, llmAttr);
+    }
+    if (fusedAttr) {
+      attrs.splice(1, 0, fusedAttr);
     }
 
     if (memory.tags && memory.tags.length > 0) {

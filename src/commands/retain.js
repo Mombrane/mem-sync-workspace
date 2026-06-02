@@ -2,6 +2,8 @@ import { readFile } from 'node:fs/promises';
 import { redactContent } from '../redaction-engine.js';
 import { join } from 'node:path';
 import { extractCandidates } from '../retain-engine.js';
+import { extractWithLLM } from '../llm-extract.js';
+import { resolveLLMProvider } from '../llm-provider.js';
 import { normalizeMemoryInput, createCanonicalKey } from '../schema.js';
 import { appendJSONL, readJSONL } from '../repo-store.js';
 import { requireValue } from '../argparse.js';
@@ -11,6 +13,7 @@ import { requireValue } from '../argparse.js';
  *
  * 这是 `mem-sync retain --transcript-file <path> --pending --device <id>` 的入口点。
  * 使用规则引擎 extractCandidates 从 transcript 中提取候选记忆，
+ * 可选地使用 --llm-extract 启用 LLM 提取，合并两类候选后，
  * 通过 normalizeMemoryInput 规范化，去重后追加写入 pending/<device>.jsonl。
  *
  * @param {string[]} args - 命令行参数数组（不含命令名）
@@ -45,11 +48,27 @@ export async function retainCommand(args) {
     throw error;
   }
 
-  // Extract candidates from transcript
+  // Extract candidates from transcript (rule engine)
   const candidates = extractCandidates(transcript, options);
 
+  // LLM 提取：如果启用 --llm-extract，合并 LLM 候选
+  let llmRecords = [];
+  if (options.llmExtract) {
+    try {
+      const llmProvider = resolveLLMProvider();
+      llmRecords = await extractWithLLM(transcript, llmProvider, {
+        ...options,
+        maxTokens: options.maxTokens,
+      });
+    } catch (err) {
+      // LLM 提取失败不影响规则候选——输出警告继续
+      process.stderr.write(`Warning: LLM extraction failed: ${err.message}\n`);
+      llmRecords = [];
+    }
+  }
+
   // Empty transcript: write nothing, print 0
-  if (candidates.length === 0) {
+  if (candidates.length === 0 && llmRecords.length === 0) {
     console.log('0');
     return;
   }
@@ -74,6 +93,12 @@ export async function retainCommand(args) {
     records.push(memory);
   }
 
+  // 合并 LLM 提取的记录（已规范化）
+  for (const llmRecord of llmRecords) {
+    // LLM 记录也可能需要去重，通过 canonicalKey 处理
+    records.push(llmRecord);
+  }
+
   // Dedup against existing pending file
   const pendingDir = process.env.MEM_SYNC_HOME ?? '.mem-sync';
   const pendingPath = join(pendingDir, 'pending', `${deviceId}.jsonl`);
@@ -95,7 +120,7 @@ export async function retainCommand(args) {
  * 解析 retain 命令的命令行参数。
  *
  * Required: --pending (flag), --transcript-file <path>, --device <id>
- * Optional: --project-id <id>, --agent-id <id>
+ * Optional: --project-id <id>, --agent-id <id>, --llm-extract (flag), --max-tokens <n>
  * Unknown flags trigger error.
  *
  * @param {string[]} args - 命令行参数数组
@@ -130,6 +155,17 @@ export function parseRetainArgs(args) {
     } else if (arg === '--skip-redaction') {
       options.skipRedaction = true;
       index += 1;
+    } else if (arg === '--llm-extract') {
+      options.llmExtract = true;
+      index += 1;
+    } else if (arg === '--max-tokens') {
+      const raw = requireValue(args, index, '--max-tokens');
+      const num = parseInt(raw, 10);
+      if (!Number.isFinite(num) || num <= 0) {
+        throw new Error('--max-tokens must be a positive integer.');
+      }
+      options.maxTokens = num;
+      index += 2;
     } else if (arg.startsWith('--')) {
       throw new Error(`unknown option: ${arg}`);
     } else {
