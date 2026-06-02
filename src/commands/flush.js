@@ -17,6 +17,7 @@ import {
 } from '../git.js';
 import { mergePendingToStore } from '../merge.js';
 import { rebuildIndex, updateIndex, getIndexStatus } from '../index-store.js';
+import { compactMemories } from '../compact-engine.js';
 
 /**
  * mem-sync flush 命令：提交并推送合并后的记忆记录。
@@ -48,11 +49,14 @@ export async function flushCommand(args) {
     remoteIdx !== -1 && remoteIdx + 1 < args.length
       ? args[remoteIdx + 1]
       : null;
+  // 解析 --compact 参数
+  const compactFlag = args.includes('--compact');
 
   // 结果对象
   const result = {
     git: { skipped: false, pulled: 0, conflicts: 0 },
     merge: { pending: 0, merged: 0, total: 0 },
+    compact: null,
     commit: { made: false, hash: null },
     push: { attempted: false, success: false },
     index: { rebuilt: false, records: 0 }
@@ -136,6 +140,29 @@ export async function flushCommand(args) {
     console.error(
       `[mem-sync:flush] merge:complete pending=${mergeResult.pending} merged=${mergeResult.merged} total=${mergeResult.total}`
     );
+    // ── Step 4.5: Compact (opt-in) ──────────────────────────────
+    if (compactFlag) {
+      console.error('[mem-sync:flush] compact:starting');
+      try {
+        const compactResult = await compactMemories({
+          storePath,
+          olderThanDays: 30,
+          dryRun: false
+        });
+        if (compactResult.candidates > 0) {
+          result.compact = compactResult;
+          console.error(
+            `[mem-sync:flush] compact:done candidates=${compactResult.candidates} duplicates=${compactResult.duplicates} removed=${compactResult.removed} kept=${compactResult.kept}`
+          );
+        } else {
+          result.compact = compactResult;
+          console.error('[mem-sync:flush] compact:no candidates');
+        }
+      } catch (err) {
+        console.error(`[mem-sync:flush] compact:warning — ${err.message}`);
+        // Compact is best-effort; flush should still succeed
+      }
+    }
 
     // ── Step 5: Commit and push ──────────────────────────────────
     if (mergeResult.merged > 0) {

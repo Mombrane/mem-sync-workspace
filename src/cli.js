@@ -7,6 +7,9 @@ import { retainCommand } from './commands/retain.js';
 import { flushCommand } from './commands/flush.js';
 import { doctorCommand } from './commands/doctor.js';
 import { redactCommand } from './commands/redact.js';
+import { compactCommand } from './commands/compact.js';
+import { summarizeCommand } from './commands/summarize.js';
+import { reviewCommand } from './commands/review.js';
 import {
   readMemories,
   readJSONLStream,
@@ -37,6 +40,12 @@ try {
     process.exitCode = await doctorCommand(args);
   } else if (command === 'redact') {
     redactCommand(args);
+  } else if (command === 'compact') {
+    await compactCommand(args);
+  } else if (command === 'summarize') {
+    await summarizeCommand(args);
+  } else if (command === 'review') {
+    await reviewCommand(args);
   } else if (command === 'list') {
     await listMemories();
   } else if (command === 'export') {
@@ -101,6 +110,9 @@ Usage:
   mem-sync context [--mode startup|recall] [--format markdown|json|memories] [--limit n] [--project-id id] [--project path]
   mem-sync flush [--remote <url>]
   mem-sync redact --check
+  mem-sync compact [--older-than <days>] [--dry-run] [--repo <path>]
+  mem-sync summarize [--project <path>] [--force] [--repo <path>]
+  mem-sync review pending [--kind <kind>] [--full] [--repo <path>]
   mem-sync doctor
   mem-sync list
   mem-sync export
