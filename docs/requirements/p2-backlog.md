@@ -43,8 +43,8 @@
 ## P2 待实现
 - ✅ LLM extractor/reranker (2026-06-02)
 - ✅ generated skills (2026-06-02)
-- encrypted repo support
-- interactive review UI
+- ✅ encrypted repo support (2026-06-02)
+- ✅ interactive review UI (2026-06-03)
 
 ## 关键约束
 - 必须使用 OpenSpec 流程
