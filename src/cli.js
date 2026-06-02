@@ -10,6 +10,12 @@ import { redactCommand } from './commands/redact.js';
 import { compactCommand } from './commands/compact.js';
 import { summarizeCommand } from './commands/summarize.js';
 import { reviewCommand } from './commands/review.js';
+import { initCommand } from './commands/init.js';
+import { syncCommand } from './commands/sync.js';
+import { statusCommand as repoStatusCommand } from './commands/status.js';
+import { logCommand } from './commands/log.js';
+import { showCommand } from './commands/show.js';
+import { forgetCommand } from './commands/forget.js';
 import {
   readMemories,
   readJSONLStream,
@@ -46,6 +52,18 @@ try {
     await summarizeCommand(args);
   } else if (command === 'review') {
     await reviewCommand(args);
+  } else if (command === 'init') {
+    await initCommand(args);
+  } else if (command === 'sync') {
+    await syncCommand(args);
+  } else if (command === 'status') {
+    await repoStatusCommand(args);
+  } else if (command === 'log') {
+    await logCommand(args);
+  } else if (command === 'show') {
+    await showCommand(args);
+  } else if (command === 'forget') {
+    await forgetCommand(args);
   } else if (command === 'list') {
     await listMemories();
   } else if (command === 'export') {
@@ -104,6 +122,12 @@ function printHelp() {
   console.log(`mem-sync
 
 Usage:
+  mem-sync init [--repo <url>]
+  mem-sync sync [--repo <path>]
+  mem-sync status [--repo <path>]
+  mem-sync log [--limit <n>] [--repo <path>]
+  mem-sync show <id> [--repo <path>]
+  mem-sync forget <id> [--reason <text>] [--repo <path>]
   mem-sync remember <content> [--kind kind] [--scope scope] [--tag tag] [...]
   mem-sync recall <query> [--format markdown|json|memories] [--limit n] [...]
   mem-sync retain --transcript-file <path> --pending --device <id> [--project-id id] [--agent-id id]
