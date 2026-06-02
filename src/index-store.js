@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
 import { validateMemory } from './schema.js';
+import { isEncrypted, decryptLineSync, loadEncryptionConfigSync } from './encryption.js';
 import {
   cosineSimilarity,
   blobToFloat32,
@@ -340,8 +341,54 @@ export function rebuildIndex(repoDir, cacheDir, options = {}) {
     }
 
     const lines = splitLines(raw);
+
+    // 加载加密配置（懒加载，每文件只加载一次）
+    let encConfig = null;
+    let encConfigLoaded = false;
+    function getEncConfig() {
+      if (!encConfigLoaded) {
+        encConfigLoaded = true;
+        // 从文件路径推导 repoPath：<repo>/memories/xxx.jsonl → <repo>
+        const parts = filePath.split('/');
+        const memoriesIdx = parts.lastIndexOf('memories');
+        if (memoriesIdx > 0) {
+          const repoPath = parts.slice(0, memoriesIdx).join('/');
+          encConfig = loadEncryptionConfigSync(repoPath);
+        }
+      }
+      return encConfig;
+    }
+
     for (let lineIdx = 0; lineIdx < lines.length; lineIdx += 1) {
-      const line = lines[lineIdx];
+      let line = lines[lineIdx];
+
+      // 步骤 0：解密（如果行是加密的）
+      if (isEncrypted(line)) {
+        const cfg = getEncConfig();
+        if (cfg) {
+          try {
+            // 收集完整的 PEM 块（加密内容可能跨多行）
+            if (line.trim().startsWith('-----BEGIN AGE ENCRYPTED FILE-----')) {
+              let block = line;
+              while (lineIdx + 1 < lines.length) {
+                lineIdx += 1;
+                block += '\n' + lines[lineIdx];
+                if (lines[lineIdx].trim().startsWith('-----END AGE ENCRYPTED FILE-----')) break;
+              }
+              line = decryptLineSync(block, cfg);
+            } else {
+              line = decryptLineSync(line, cfg);
+            }
+          } catch (err) {
+            logger?.(`[mem-sync:index] rebuild:skip decrypt failed at ${filePath}:${lineIdx + 1}: ${err.message}`);
+            continue;
+          }
+        } else {
+          // 无加密配置，无法解密，跳过
+          logger?.(`[mem-sync:index] rebuild:skip encrypted line without config at ${filePath}:${lineIdx + 1}`);
+          continue;
+        }
+      }
 
       // 步骤 1：JSON 解析
       let record;

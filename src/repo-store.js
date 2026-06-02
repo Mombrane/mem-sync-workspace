@@ -2,6 +2,7 @@ import { mkdir, appendFile, readFile, writeFile } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
+import { loadEncryptionConfig, isEncrypted, encryptLine, decryptLine } from './encryption.js';
 
 // JSONL 格式的优势：
 // 1. 每行一条独立 JSON 记录，Git diff 按行生效，适合版本控制
@@ -11,6 +12,17 @@ import { createInterface } from 'node:readline';
 
 const STORE_FILE = 'memories.jsonl';
 const LEGACY_STORE_FILE = 'memories.json';
+
+/**
+ * 获取加密配置（懒加载）
+ * 从 storePath 推导 repoPath 并加载 encryption.json。
+ * storePath 格式如 <repo>/memories.jsonl，repoPath 为其父目录。
+ * 无配置文件时返回 null（明文模式）。
+ */
+async function getEncryptionConfig(storePath) {
+  const repoPath = dirname(storePath);
+  return loadEncryptionConfig(repoPath);
+}
 
 /**
  * 解析 JSONL 存储路径（新格式 .jsonl）。
@@ -36,13 +48,54 @@ export async function readJSONL(storePath = resolveStorePath()) {
   const records = [];
   try {
     const raw = await readFile(storePath, 'utf8');
-    for (const line of raw.split('\n')) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      try {
-        records.push(JSON.parse(trimmed));
-      } catch {
-        // JSONL 行损坏时跳过并继续，避免单行错误阻塞全部读取
+    const encConfig = await getEncryptionConfig(storePath);
+    const lines = raw.split('\n');
+    let i = 0;
+    while (i < lines.length) {
+      const trimmed = lines[i].trim();
+      if (!trimmed) { i++; continue; }
+
+      if (isEncrypted(trimmed)) {
+        // 加密行：PEM 格式可能跨多行，需收集完整块后解密
+        if (trimmed.startsWith('-----BEGIN AGE ENCRYPTED FILE-----')) {
+          let block = trimmed;
+          i++;
+          while (i < lines.length) {
+            block += '\n' + lines[i];
+            if (lines[i].trim().startsWith('-----END AGE ENCRYPTED FILE-----')) {
+              i++;
+              break;
+            }
+            i++;
+          }
+          try {
+            if (encConfig) {
+              const decrypted = await decryptLine(block, encConfig);
+              records.push(JSON.parse(decrypted));
+            }
+            // 无加密配置时跳过加密行（无法解密）
+          } catch {
+            // 解密失败时跳过，与 JSONL 损坏行处理一致
+          }
+        } else {
+          // 非 PEM 格式的加密内容（单行）
+          try {
+            if (encConfig) {
+              const decrypted = await decryptLine(trimmed, encConfig);
+              records.push(JSON.parse(decrypted));
+            }
+          } catch {
+            // 解密失败时跳过
+          }
+          i++;
+        }
+      } else {
+        try {
+          records.push(JSON.parse(trimmed));
+        } catch {
+          // JSONL 行损坏时跳过并继续，避免单行错误阻塞全部读取
+        }
+        i++;
       }
     }
   } catch (error) {
@@ -58,10 +111,26 @@ export async function readJSONL(storePath = resolveStorePath()) {
  * 文件不存在时生成器自然结束，调用方可安全使用 for-await-of。
  */
 export async function* readJSONLStream(storePath = resolveStorePath()) {
+  // 加密文件使用 readJSONL（已正确处理 PEM 多行块），逐条 yield
+  const encConfig = await getEncryptionConfig(storePath);
+  if (encConfig) {
+    try {
+      const records = await readJSONL(storePath);
+      for (const record of records) {
+        yield record;
+      }
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+    return;
+  }
+
+  // 明文文件使用 readline 流式读取（内存效率更高）
   let rl;
   try {
     const stream = createReadStream(storePath, { encoding: 'utf8' });
     rl = createInterface({ input: stream, crlfDelay: Infinity });
+
     for await (const line of rl) {
       const trimmed = line.trim();
       if (!trimmed) continue;
@@ -84,8 +153,13 @@ export async function* readJSONLStream(storePath = resolveStorePath()) {
  */
 export async function appendJSONL(record, storePath = resolveStorePath()) {
   await mkdir(dirname(storePath), { recursive: true });
-  const line = JSON.stringify(record) + '\n';
-  await appendFile(storePath, line, 'utf8');
+  let line = JSON.stringify(record);
+  const encConfig = await getEncryptionConfig(storePath);
+  if (encConfig) {
+    // 加密模式：加密整行内容
+    line = await encryptLine(line, encConfig);
+  }
+  await appendFile(storePath, line + '\n', 'utf8');
 }
 
 /**
@@ -99,8 +173,17 @@ export async function writeJSONL(records, storePath = resolveStorePath()) {
     await writeFile(storePath, '', 'utf8');
     return;
   }
-  const lines = records.map(r => JSON.stringify(r)).join('\n') + '\n';
-  await writeFile(storePath, lines, 'utf8');
+  const encConfig = await getEncryptionConfig(storePath);
+  const lines = [];
+  for (const r of records) {
+    let line = JSON.stringify(r);
+    if (encConfig) {
+      // 加密模式：每行独立加密
+      line = await encryptLine(line, encConfig);
+    }
+    lines.push(line);
+  }
+  await writeFile(storePath, lines.join('\n') + '\n', 'utf8');
 }
 
 /**

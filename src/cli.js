@@ -17,6 +17,7 @@ import { statusCommand as repoStatusCommand } from './commands/status.js';
 import { logCommand } from './commands/log.js';
 import { showCommand } from './commands/show.js';
 import { forgetCommand } from './commands/forget.js';
+import { keyStatusCommand, keyExportCommand } from './commands/key.js';
 import {
   readMemories,
   readJSONLStream,
@@ -67,6 +68,16 @@ try {
     await showCommand(args);
   } else if (command === 'forget') {
     await forgetCommand(args);
+  } else if (command === 'key') {
+    // key 命令需要子命令：status 或 export
+    const subcommand = args[0];
+    if (subcommand === 'status') {
+      await keyStatusCommand(args.slice(1));
+    } else if (subcommand === 'export') {
+      await keyExportCommand(args.slice(1));
+    } else {
+      throw new Error('key requires a subcommand: status, export');
+    }
   } else if (command === 'list') {
     await listMemories();
   } else if (command === 'export') {
@@ -125,7 +136,7 @@ function printHelp() {
   console.log(`mem-sync
 
 Usage:
-  mem-sync init [--repo <url>]
+  mem-sync init [--repo <url>] [--encrypt [--password]]
   mem-sync sync [--repo <path>]
   mem-sync status [--repo <path>]
   mem-sync log [--limit <n>] [--repo <path>]
@@ -143,6 +154,9 @@ Usage:
   mem-sync skills list [--repo <path>]
   mem-sync skills show <name> [--repo <path>]
   mem-sync review pending [--kind <kind>] [--full] [--repo <path>]
+  mem-sync key status [--repo <path>]     Show encryption configuration
+  mem-sync key export [--repo <path>]     Show private key path for backup
+  mem-sync init --encrypt [--password]    Initialize with encryption enabled
   mem-sync doctor
   mem-sync list
   mem-sync export
