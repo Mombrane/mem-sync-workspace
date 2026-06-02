@@ -9,6 +9,7 @@ import { doctorCommand } from './commands/doctor.js';
 import { redactCommand } from './commands/redact.js';
 import { compactCommand } from './commands/compact.js';
 import { summarizeCommand } from './commands/summarize.js';
+import { skillsCommand } from './commands/skills.js';
 import { reviewCommand } from './commands/review.js';
 import { initCommand } from './commands/init.js';
 import { syncCommand } from './commands/sync.js';
@@ -50,6 +51,8 @@ try {
     await compactCommand(args);
   } else if (command === 'summarize') {
     await summarizeCommand(args);
+  } else if (command === 'skills') {
+    await skillsCommand(args);
   } else if (command === 'review') {
     await reviewCommand(args);
   } else if (command === 'init') {
@@ -136,6 +139,9 @@ Usage:
   mem-sync redact --check
   mem-sync compact [--older-than <days>] [--dry-run] [--repo <path>]
   mem-sync summarize [--project <path>] [--force] [--repo <path>]
+  mem-sync skills generate [--repo <path>] [--force] [--project <id>]
+  mem-sync skills list [--repo <path>]
+  mem-sync skills show <name> [--repo <path>]
   mem-sync review pending [--kind <kind>] [--full] [--repo <path>]
   mem-sync doctor
   mem-sync list
