@@ -6,11 +6,11 @@
 ---
 
 ## 📊 需求统计
-- 总计: 3 个待处理需求
+- 总计: 2 个待处理需求
 - 🔴 高优先级: 0 个
-- 🟡 中优先级: 3 个
+- 🟡 中优先级: 2 个
 - 🟢 低优先级: 0 个
-- ✅ 已完成: 25 个
+- ✅ 已完成: 26 个
 
 ---
 
@@ -23,7 +23,7 @@
 ## 🟡 中优先级
 | ID | 需求描述 | 来源文档 | 状态 | 依赖 | 子需求 |
 |----|----------|----------|------|------|--------|
-| REQ-013 | Memory provenance 与审核轨迹补强 | OMP 对照分析 | 🔄 待处理 | REQ-011 | 为记忆补充 `author` / `device` / `session` / `reviewer` / `reviewedAt` / `trustTier` 等来源与审核字段；让 recall、review、协作冲突处理可追溯 |
+| REQ-013 | Memory provenance 与审核轨迹补强 | OMP 对照分析 | ✅ 已完成 | REQ-011 | author/device/session/reviewer/reviewedAt/trustTier 字段 + review 注入 + recall 过滤 |
 | REQ-014 | Scope 升级为 bank / namespace 召回模型 | OMP 对照分析 | 🔄 待处理 | REQ-011, REQ-013 | 在现有 `scope` 之上定义 `personal` / `project` / `team` / `global` 可组合可见性；支持个人多设备与团队共享共存时的默认召回优先级 |
 | REQ-015 | Recall 回归测试矩阵与黄金语料集 | 质量设计 | 🔄 待处理 | REQ-011 | 建立固定 fixture / JSONL 语料，覆盖新旧冲突、真假冲突、跨项目冲突、相似文本冲突、团队共享冲突；为每个 query 固定预期 top-k 结果 |
 
@@ -129,6 +129,7 @@
 | REQ-008 | 旧格式导入命令（legacy import） | 2026-06-03 | completion-plan.md | - |
 | REQ-011 | Recall 正确性治理与排序约束 | 2026-06-03 | 代码分析 + OMP 对照分析 | [change](../openspec/changes/req011-recall-correctness) |
 | REQ-012 | Canonical key 与合并语义统一 | 2026-06-03 | 代码分析 + OMP 对照分析 | [change](../openspec/changes/req012-canonical-key-unification) |
+| REQ-013 | Memory provenance 与审核轨迹补强 | 2026-06-03 | OMP 对照分析 | [change](../openspec/changes/req013-memory-provenance) |
 
 ---
 
