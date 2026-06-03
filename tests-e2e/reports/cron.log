@@ -16,3 +16,6 @@
 /home/huguangyao/.hermes/repos/mem-sync-workspace/tests-e2e/cron-runner.sh: 行 68: 🚀 开始执行自动测试${IS_FOLLOWUP && echo '（复查）' || echo ''}: 错误的替换
 [2026-06-03 08:30:01] ⏭️ 跳过复查：没有待复查的失败
 [2026-06-03 08:30:01] ⏭️ 跳过复查：没有待复查的失败
+/home/huguangyao/.hermes/repos/mem-sync-workspace/tests-e2e/cron-runner.sh: 行 68: 🚀 开始执行自动测试${IS_FOLLOWUP && echo '（复查）' || echo ''}: 错误的替换
+[2026-06-03 10:30:01] ⏭️ 跳过复查：没有待复查的失败
+[2026-06-03 10:30:01] ⏭️ 跳过复查：没有待复查的失败
