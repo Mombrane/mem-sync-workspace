@@ -3,6 +3,13 @@ import { createHash } from 'node:crypto';
 export const MEMORY_KINDS = ['preference', 'identity', 'project_fact', 'decision', 'workflow', 'correction', 'warning', 'episode'];
 export const MEMORY_SCOPES = ['user', 'project', 'agent', 'global', 'local-only'];
 export const MEMORY_VERACITIES = ['stated', 'inferred', 'tool', 'imported', 'unknown'];
+export const VERACITY_SCORES = {
+  stated: 1.0,
+  tool: 0.9,
+  inferred: 0.5,
+  imported: 0.5,
+  unknown: 0.3
+};
 
 const HASH_LENGTH = 12;
 const SUMMARY_LENGTH = 120;
@@ -204,4 +211,15 @@ function requireIsoTimestamp(value, field) {
 function requireNullableIsoTimestamp(value, field) {
   if (value === null) return;
   requireIsoTimestamp(value, field);
+}
+
+/**
+ * Compute a quality multiplier for ranking based on confidence, importance, and veracity.
+ * Returns a value in [0, 1] where higher = better quality.
+ */
+export function getQualityMultiplier(record) {
+  const confidence = record.confidence ?? 0.5;
+  const importance = record.importance ?? 0.5;
+  const veracityScore = VERACITY_SCORES[record.veracity] ?? 0.3;
+  return (confidence + importance + veracityScore) / 3;
 }

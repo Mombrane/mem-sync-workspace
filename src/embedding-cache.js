@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { getQualityMultiplier } from './schema.js';
 
 const DB_FILENAME = 'index.sqlite';
 
@@ -115,10 +116,10 @@ export function queryEmbeddings(db, memoryRowids) {
  * @param {number} [weight=0.4] — weight for BM25 component [0, 1]
  * @returns {number}
  */
-export function computeHybridScore(bm25Rank, cosineSim, weight = 0.4) {
+export function computeHybridScore(bm25Rank, cosineSim, weight = 0.4, qualityMultiplier = 1.0) {
   const bm25Component = 1 / (1 + Math.abs(bm25Rank));
   const cosineComponent = Math.max(0, cosineSim);
-  return weight * bm25Component + (1 - weight) * cosineComponent;
+  return (weight * bm25Component + (1 - weight) * cosineComponent) * qualityMultiplier;
 }
 
 /**
@@ -240,9 +241,15 @@ export function mmrRerank(results, options = {}) {
   // 否则将 BM25 rank 归一化到 [0, 1]：更负的 rank 表示更匹配，
   // 使用 |rank| / (1 + |rank|) 映射到更高分数
   const relevance = results.map(r => {
-    if (typeof r._hybridScore === 'number') return r._hybridScore;
+    if (typeof r._hybridScore === 'number') {
+      // _hybridScore already includes quality from searchIndexHybrid
+      return r._hybridScore;
+    }
+    // BM25-only fallback: normalize rank and apply quality
     const absRank = Math.abs(r._rank ?? 0);
-    return absRank / (1 + absRank);
+    const base = absRank / (1 + absRank);
+    const quality = getQualityMultiplier(r);
+    return base * quality;
   });
 
   // 步骤 2：辅助函数 — 计算两条结果之间的相似度

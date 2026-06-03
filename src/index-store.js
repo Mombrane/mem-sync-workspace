@@ -2,7 +2,7 @@ import Database from 'better-sqlite3';
 import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
-import { validateMemory } from './schema.js';
+import { getQualityMultiplier, validateMemory } from './schema.js';
 import { isEncrypted, decryptLineSync, loadEncryptionConfigSync } from './encryption.js';
 import {
   cosineSimilarity,
@@ -149,6 +149,24 @@ function shouldSkipRecord(record) {
   if (record.deletedAt) return true;
   if (record.validUntil && new Date(record.validUntil) < new Date()) return true;
   return false;
+}
+
+/**
+ * Exclude memories that are superseded by other memories in the same result set.
+ * If record A has supersedes=[B.id] and both A and B are in results, B is removed.
+ */
+function excludeSuperseded(results) {
+  const resultIds = new Set(results.map(r => r.id));
+  const supersededIds = new Set();
+  for (const r of results) {
+    if (Array.isArray(r.supersedes)) {
+      for (const s of r.supersedes) {
+        if (resultIds.has(s)) supersededIds.add(s);
+      }
+    }
+  }
+  if (supersededIds.size === 0) return results;
+  return results.filter(r => !supersededIds.has(r.id));
 }
 
 // ─── 公开 API ───────────────────────────────────────────────────────
@@ -556,7 +574,7 @@ export async function searchIndexHybrid(cacheDir, options = {}) {
   const { embeddingProvider, embeddingWeight = 0.4, limit = 20, mmr = false, mmrLambda = 0.7 } = options;
 
   // Phase 1: Get FTS5 BM25 candidates (3x limit for re-ranking pool)
-  const ftsResults = searchIndex(cacheDir, { ...options, limit: limit * 3 });
+  let ftsResults = searchIndex(cacheDir, { ...options, limit: limit * 3 });
 
   // If no embedding provider or no FTS results, fall back
   if (!embeddingProvider || embeddingProvider.dimensions === 0) {
@@ -650,18 +668,22 @@ export async function searchIndexHybrid(cacheDir, options = {}) {
 
       if (vec) {
         const sim = cosineSimilarity(queryVec, vec);
-        result._hybridScore = computeHybridScore(result._rank ?? 0, sim, embeddingWeight);
+        const quality = getQualityMultiplier(result);
+        result._hybridScore = computeHybridScore(result._rank ?? 0, sim, embeddingWeight, quality);
         result._cosineSim = sim;
       } else {
         // No embedding for this record — use BM25 only
+        const quality = getQualityMultiplier(result);
         const bm25Normalized = 1 / (1 + Math.abs(result._rank ?? 0));
-        result._hybridScore = embeddingWeight * bm25Normalized;
+        result._hybridScore = embeddingWeight * bm25Normalized * quality;
         result._cosineSim = null;
       }
     }
 
     // Re-sort by hybrid score (higher = better)
     ftsResults.sort((a, b) => (b._hybridScore ?? 0) - (a._hybridScore ?? 0));
+
+    ftsResults = excludeSuperseded(ftsResults);
 
     // Phase 3: MMR diversity reranking (opt-in)
     if (mmr) {
@@ -860,6 +882,16 @@ export function searchIndex(cacheDir, optionsOrQuery, legacyLimit) {
       // 附加 FTS5 BM25 排名到记录（用于 recall 输出格式化）
       record._rank = row.rank;
       return record;
+    });
+
+    results = excludeSuperseded(results);
+
+    // 质量加权排序：将 BM25 rank 乘以质量乘数（confidence + importance + veracity），
+    // 使高质量记忆在纯 FTS 路径中也获得更高排名。
+    results.sort((a, b) => {
+      const scoreA = Math.abs(a._rank ?? 0) * getQualityMultiplier(a);
+      const scoreB = Math.abs(b._rank ?? 0) * getQualityMultiplier(b);
+      return scoreB - scoreA; // 降序，高分在前
     });
 
     // 标签后过滤（AND 语义）：在 JS 中过滤，避免依赖 SQLite JSON1 扩展。
