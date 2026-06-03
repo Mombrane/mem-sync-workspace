@@ -1,5 +1,7 @@
 # Mem Sync CLI Implementation Plan
 
+> **Status as of 2026-06-03:** This June 1 plan is historical context, not a live tracker. Most functional milestones were delivered through archived OpenSpec changes, but the checkboxes in this file were never maintained. Use `docs/requirements-backlog.md` for the current remaining work list, and use `docs/superpowers/plans/2026-06-02-mem-sync-completion-plan.md` for the follow-up hardening context.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build `mem-sync` from the current JSON prototype into a Git-backed, JSONL-first memory CLI with schema validation, safe writes, local FTS recall, lifecycle commands, and staged Git sync.

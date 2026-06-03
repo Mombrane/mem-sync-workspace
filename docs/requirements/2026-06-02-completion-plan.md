@@ -1,5 +1,7 @@
 # Mem Sync Completion And Hardening Implementation Plan
 
+> **Status as of 2026-06-03:** This document is now a historical hardening plan. Most feature work described here landed through archived OpenSpec changes, but the checkboxes below were never maintained. Use `docs/requirements-backlog.md` as the live tracker for the remaining work.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Bring the June 1 `mem-sync` implementation plan into an accurate June 2 completion state by closing remaining CLI gaps, aligning documentation, and hardening Git sync behavior without expanding into deferred product features.
@@ -12,23 +14,35 @@
 
 ## Current State Snapshot
 
-As of 2026-06-02, the repository has no active OpenSpec change under `openspec/changes` and the full test suite passes with 312 tests. The CLI currently exposes:
+As of 2026-06-03, the repository has no active OpenSpec change under `openspec/changes`. Most CLI surfaces in this plan now exist, but the local full test suite is not currently all green on this machine because of 5 known encryption-related failures. The CLI currently exposes:
 
 ```text
-remember, recall, retain, context, flush, redact, compact, summarize,
-review pending, doctor, list, export, index rebuild/status/update
+init, sync, status, log, show, forget, remember, recall, retain, context,
+flush, redact, compact, summarize, skills generate/list/show,
+review pending/approve/reject, key status/export, doctor, list, export,
+index rebuild/status/update
 ```
 
-The June 1 plan is partially complete but not accurately checked off. Implemented areas include Schema v1, JSONL storage, redaction, SQLite FTS indexing, recall, context, prepare, retain, flush, summarize, doctor, and review. Remaining gaps from the June 1 plan are:
+The June 1 plan is largely implemented, but neither that file nor this one was kept up to date as a checklist. Implemented areas include Schema v1, JSONL storage, redaction, SQLite FTS indexing, recall, context, prepare, retain, flush, summarize, doctor, review, `show`, `forget`, `init`, `sync`, `status`, LLM reranking, generated skills, encrypted repo support, and interactive review flows. The remaining gaps now are:
 
 - No `add` alias for `remember`.
 - No legacy import command for `.mem-sync/memories.json`.
-- No `show` or `forget` command for explicit memory inspection and soft deletion.
-- No standalone `init`, `sync`, or `status` command; existing lifecycle behavior is covered partly by `prepare`, `flush`, and `doctor`.
 - README still documents `add` and an outdated JSON roadmap.
 - `compact`, `summarize`, and `review` default to `~/.memcli/default` instead of the repository-wide `.mem-sync` / `MEM_SYNC_HOME` convention.
 - `flush --compact` exists in code but is missing from CLI help.
-- `src/git.js` builds shell command strings and assumes `origin/main`.
+- `src/git.js` still mixes shell-string Git calls with argument-array calls and still assumes `origin/main`.
+- Full `npm test` is not currently green on this machine because the encryption tests assume an `age` binary and the error-ordering behavior in `src/encryption.js` does not match test expectations.
+
+## June 1 Plan Reconciliation
+
+| June 1 area | Status as of 2026-06-03 |
+| --- | --- |
+| Schema v1, JSONL storage, redaction, FTS, recall, context | Implemented |
+| Prepare, retain, flush, compact, summarize, doctor, review | Implemented |
+| `show`, `forget`, `init`, `sync`, `status`, `log` | Implemented |
+| `add` alias, legacy import, README/help consistency | Still pending |
+| Git branch safety and command hardening | Partially implemented |
+| Encryption support | Implemented with known test/env gaps |
 
 ## Non-Goals
 
