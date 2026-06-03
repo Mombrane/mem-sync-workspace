@@ -17,6 +17,7 @@ import { statusCommand as repoStatusCommand } from './commands/status.js';
 import { logCommand } from './commands/log.js';
 import { showCommand } from './commands/show.js';
 import { forgetCommand } from './commands/forget.js';
+import { importCommand } from './commands/import.js';
 import { keyStatusCommand, keyExportCommand } from './commands/key.js';
 import {
   readMemories,
@@ -78,6 +79,8 @@ try {
     } else {
       throw new Error('key requires a subcommand: status, export');
     }
+  } else if (command === 'import') {
+    await importCommand(args);
   } else if (command === 'list') {
     await listMemories();
   } else if (command === 'export') {
@@ -182,6 +185,7 @@ Usage:
   mem-sync key status [--repo <path>]     Show encryption configuration
   mem-sync key export [--repo <path>]     Show private key path for backup
   mem-sync init --encrypt [--password]    Initialize with encryption enabled
+  mem-sync import legacy [--from <memories.json>] [--to <memories.jsonl>]
   mem-sync doctor
   mem-sync list
   mem-sync export
