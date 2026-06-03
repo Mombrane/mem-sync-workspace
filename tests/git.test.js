@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { execSync } from 'node:child_process';
 
 import {
+  getDefaultBranch,
   hasRemote,
   getHead,
   fetch,
@@ -436,6 +437,76 @@ test('rebaseAbort aborts in-progress rebase', () => {
     // 验证 rebase 已中止：HEAD 应在 main 分支
     const branch = execSync('git rev-parse --abbrev-ref HEAD', { cwd: repoDir, encoding: 'utf8' }).trim();
     assert.equal(branch, 'main');
+  } finally {
+    rmSync(repoDir, { recursive: true, force: true });
+  }
+});
+
+// ─── getDefaultBranch ───────────────────────────────────────────────
+
+test('getDefaultBranch returns current branch for local repo', () => {
+  const repoDir = createTempRepo('default-branch-local');
+  try {
+    const branch = getDefaultBranch(repoDir);
+    assert.equal(branch, 'main');
+  } finally {
+    rmSync(repoDir, { recursive: true, force: true });
+  }
+});
+
+test('getDefaultBranch discovers remote default branch', () => {
+  const bareDir = createBareRepo('default-branch-remote');
+  const repoDir = createTempRepo('default-branch-local2');
+  try {
+    commitFile(repoDir, 'test.txt', 'content');
+    setupRemote(repoDir, bareDir);
+    const branch = getDefaultBranch(repoDir);
+    // Should return main (the branch we pushed)
+    assert.equal(branch, 'main');
+  } finally {
+    rmSync(repoDir, { recursive: true, force: true });
+    rmSync(bareDir, { recursive: true, force: true });
+  }
+});
+
+test('push works on non-main default branch', () => {
+  const bareDir = createBareRepo('push-nonmain');
+  const repoDir = createTempRepo('push-nonmain-local');
+  try {
+    // Initialize with 'develop' branch
+    execSync('git checkout -b develop', { cwd: repoDir, encoding: 'utf8' });
+    execSync(`git remote add origin "${bareDir}"`, { cwd: repoDir, encoding: 'utf8' });
+    writeFileSync(join(repoDir, 'memory.jsonl'), '{"id":"mem_1"}\n', 'utf8');
+    stageFile(repoDir, 'memory.jsonl');
+    commit(repoDir, 'mem-sync: test on develop');
+
+    const result = push(repoDir);
+    assert.equal(result, true);
+
+    const remoteLog = execSync('git log --oneline --all', { cwd: bareDir, encoding: 'utf8' });
+    assert.match(remoteLog, /mem-sync: test on develop/);
+  } finally {
+    rmSync(repoDir, { recursive: true, force: true });
+    rmSync(bareDir, { recursive: true, force: true });
+  }
+});
+
+test('stashSave handles special characters in stash message', () => {
+  const repoDir = createTempRepo('stash-special');
+  try {
+    commitFile(repoDir, 'tracked.txt', 'original');
+    writeFileSync(join(repoDir, 'tracked.txt'), 'modified', 'utf8');
+
+    const stashed = stashSave(repoDir);
+    assert.equal(stashed, true);
+
+    // Verify stash exists
+    const stashList = execSync('git stash list', { cwd: repoDir, encoding: 'utf8' });
+    assert.match(stashList, /mem-sync prepare auto-stash/);
+
+    stashPop(repoDir);
+    const restored = readFileSync(join(repoDir, 'tracked.txt'), 'utf8').trim();
+    assert.equal(restored, 'modified');
   } finally {
     rmSync(repoDir, { recursive: true, force: true });
   }

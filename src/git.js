@@ -48,6 +48,39 @@ function execGitArgs(args, cwd) {
   return result.stdout;
 }
 
+/**
+ * 获取默认分支名。
+ *
+ * 按顺序尝试：remote HEAD → local HEAD → main → master → 'main' 兜底。
+ *
+ * @param {string} cwd - 工作目录
+ * @returns {string} 默认分支名
+ */
+export function getDefaultBranch(cwd) {
+  // 1. Try remote HEAD ref
+  try {
+    const ref = execGitArgs(['symbolic-ref', 'refs/remotes/origin/HEAD', '--short'], cwd);
+    return ref.trim().replace('origin/', '');
+  } catch {}
+  // 2. Try local HEAD
+  try {
+    const ref = execGitArgs(['symbolic-ref', 'HEAD', '--short'], cwd);
+    return ref.trim();
+  } catch {}
+  // 3. Try main
+  try {
+    execGitArgs(['rev-parse', '--verify', 'refs/heads/main'], cwd);
+    return 'main';
+  } catch {}
+  // 4. Try master
+  try {
+    execGitArgs(['rev-parse', '--verify', 'refs/heads/master'], cwd);
+    return 'master';
+  } catch {}
+  // 5. Fallback
+  return 'main';
+}
+
 // ─── 公开 API ────────────────────────────────────────────────────────────
 
 /**
@@ -97,7 +130,7 @@ export function fetch(cwd) {
   }
 
   try {
-    const count = execGit('rev-list --count HEAD..origin/main', cwd).trim();
+    const count = execGitArgs(['rev-list', '--count', `HEAD..origin/${getDefaultBranch(cwd)}`], cwd).trim();
     return Number(count);
   } catch {
     return 0;
@@ -121,7 +154,7 @@ export function pullRebase(cwd) {
   const headBefore = getHead(cwd);
 
   try {
-    execGit('pull --rebase origin main', cwd);
+    execGitArgs(['pull', '--rebase', 'origin', getDefaultBranch(cwd)], cwd);
   } catch (err) {
     // 检测是否为 rebase 冲突：尝试 abort，成功则说明 rebase 正在进行
     let isConflict = false;
@@ -173,7 +206,7 @@ export function stashSave(cwd) {
     return false;
   }
 
-  execGit('stash push -m "mem-sync prepare auto-stash"', cwd);
+  execGitArgs(['stash', 'push', '-m', 'mem-sync prepare auto-stash'], cwd);
   return true;
 }
 
@@ -217,7 +250,7 @@ export function stageFile(cwd, filePath) {
  */
 export function commit(cwd, message) {
   execGitArgs(['commit', '-m', message], cwd);
-  return execGit('rev-parse --short HEAD', cwd).trim();
+  return execGitArgs(['rev-parse', '--short', 'HEAD'], cwd).trim();
 }
 
 /**
@@ -231,7 +264,7 @@ export function commit(cwd, message) {
  */
 export function push(cwd) {
   try {
-    execGit('push origin main', cwd);
+    execGitArgs(['push', 'origin', getDefaultBranch(cwd)], cwd);
     return true;
   } catch {
     return false;
