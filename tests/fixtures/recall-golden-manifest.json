@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "description": "REQ-015 Golden corpus manifest — fixed expected top-k for each query",
+  "queries": {
+    "默认包管理器": {
+      "scenario": "new-vs-old",
+      "expectedTopK": ["mem_newer"],
+      "expectedNotContains": [],
+      "description": "Newer record should rank above older when quality is equal"
+    },
+    "生产数据库": {
+      "scenario": "veracity-conflict",
+      "expectedOrder": ["mem_stated_fact", "mem_tool_fact", "mem_inferred_fact", "mem_unknown_fact"],
+      "description": "Veracity score ordering: stated(1.0) > tool(0.9) > inferred(0.5) > unknown(0.3)"
+    },
+    "部署命令": {
+      "scenario": "cross-project",
+      "expectedContains": ["mem_proj_a", "mem_proj_b", "mem_global"],
+      "subQueries": {
+        "部署命令 --project-id project-alpha": {
+          "expectedTopK": ["mem_proj_a"],
+          "expectedNotContains": ["mem_proj_b"]
+        }
+      }
+    },
+    "前端框架": {
+      "scenario": "similar-text",
+      "expectedContains": ["mem_react_choice", "mem_vue_choice", "mem_angular_choice"]
+    },
+    "缩进风格": {
+      "scenario": "team-vs-personal",
+      "expectedOrder": ["mem_personal_style", "mem_project_style", "mem_team_style"],
+      "description": "Scope weight: personal(1.0) > project(0.8) > team(0.6) when quality is equal"
+    },
+    "CI 合并规则": {
+      "scenario": "active-rule-filtering",
+      "expectedTopK": ["mem_active_rule"],
+      "expectedNotContains": ["mem_deploy_a", "mem_deploy_b", "mem_deploy_c"],
+      "description": "Only active rule should appear; superseded and other scenarios excluded"
+    },
+    "部署方式": {
+      "scenario": "chain-supersedes",
+      "expectedTopK": ["mem_deploy_a"],
+      "expectedNotContains": ["mem_deploy_b", "mem_deploy_c"],
+      "description": "mem_deploy_a supersedes mem_deploy_b which supersedes mem_deploy_c"
+    },
+    "代码审查": {
+      "scenario": "provenance",
+      "expectedContains": ["mem_author_alice", "mem_author_bob"],
+      "subQueries": {
+        "代码审查 --author alice": {
+          "expectedTopK": ["mem_author_alice"],
+          "expectedNotContains": ["mem_author_bob"]
+        }
+      }
+    }
+  }
+}
