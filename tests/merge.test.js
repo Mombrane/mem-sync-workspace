@@ -5,11 +5,11 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import {
-  buildCanonicalKey,
   mergeByCanonicalKey,
   readPendingFiles,
   mergePendingToStore
 } from '../src/merge.js';
+import { createCanonicalKey } from '../src/schema.js';
 
 /**
  * 辅助函数：创建标准 v1 记忆记录。
@@ -39,37 +39,49 @@ function makeRecord(overrides = {}) {
   };
 }
 
-// ─── buildCanonicalKey ──────────────────────────────────────────────
+// ─── createCanonicalKey ──────────────────────────────────────────────
 
-test('buildCanonicalKey produces scope:kind:contentHash', () => {
+test('createCanonicalKey produces kind:scope:projectId:agentId:contentHash', () => {
   const record = makeRecord({
     kind: 'preference',
     scope: 'user',
     content: '用户偏好简洁的中文回答。'
   });
 
-  const key = buildCanonicalKey(record);
+  const key = createCanonicalKey(record);
 
-  assert.match(key, /^user:preference:[a-f0-9]{12}$/);
+  assert.match(key, /^preference:user:::[a-f0-9]{12}$/);
 });
 
-test('buildCanonicalKey is deterministic', () => {
+test('createCanonicalKey is deterministic', () => {
   const record = makeRecord({ content: 'same content' });
-  const key1 = buildCanonicalKey(record);
-  const key2 = buildCanonicalKey(record);
+  const key1 = createCanonicalKey(record);
+  const key2 = createCanonicalKey(record);
   assert.equal(key1, key2);
 });
 
-test('buildCanonicalKey normalizes whitespace', () => {
+test('createCanonicalKey normalizes whitespace', () => {
   const record1 = makeRecord({ content: 'hello   world\n\ttest' });
   const record2 = makeRecord({ content: 'hello world test' });
-  assert.equal(buildCanonicalKey(record1), buildCanonicalKey(record2));
+  assert.equal(createCanonicalKey(record1), createCanonicalKey(record2));
 });
 
-test('buildCanonicalKey different content produces different keys', () => {
-  const key1 = buildCanonicalKey(makeRecord({ content: 'alpha' }));
-  const key2 = buildCanonicalKey(makeRecord({ content: 'beta' }));
+test('createCanonicalKey different content produces different keys', () => {
+  const key1 = createCanonicalKey(makeRecord({ content: 'alpha' }));
+  const key2 = createCanonicalKey(makeRecord({ content: 'beta' }));
   assert.notEqual(key1, key2);
+});
+
+test('createCanonicalKey different projectId produces different keys', () => {
+  const record1 = makeRecord({ content: 'same content', projectId: 'proj-a' });
+  const record2 = makeRecord({ content: 'same content', projectId: 'proj-b' });
+  assert.notEqual(createCanonicalKey(record1), createCanonicalKey(record2));
+});
+
+test('createCanonicalKey different agentId produces different keys', () => {
+  const record1 = makeRecord({ content: 'same content', agentId: 'agent-x' });
+  const record2 = makeRecord({ content: 'same content', agentId: 'agent-y' });
+  assert.notEqual(createCanonicalKey(record1), createCanonicalKey(record2));
 });
 
 // ─── mergeByCanonicalKey ───────────────────────────────────────────
@@ -118,6 +130,18 @@ test('mergeByCanonicalKey preserves unique records', () => {
 
   const merged = mergeByCanonicalKey(records);
   assert.equal(merged.length, 3);
+});
+
+test('mergeByCanonicalKey does not merge cross-project records with same content', () => {
+  const records = [
+    makeRecord({ id: 'mem_a', content: 'shared content', projectId: 'proj-x' }),
+    makeRecord({ id: 'mem_b', content: 'shared content', projectId: 'proj-y' })
+  ];
+
+  const merged = mergeByCanonicalKey(records);
+  assert.equal(merged.length, 2);
+  const ids = merged.map(r => r.id).sort();
+  assert.deepEqual(ids, ['mem_a', 'mem_b']);
 });
 
 // ─── readPendingFiles ───────────────────────────────────────────────

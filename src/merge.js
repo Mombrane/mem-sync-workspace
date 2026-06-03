@@ -1,29 +1,7 @@
-import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, unlinkSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { normalizeContent } from './schema.js';
+import { normalizeContent, createCanonicalKey } from './schema.js';
 
-/**
- * 构建合并用 canonicalKey。
- *
- * canonicalKey 用于确定性去重：scope + kind + 内容哈希。
- * 内容哈希基于 normalizeContent() 的结果（空白折叠），
- * 确保同语义、不同格式的内容被识别为同一记录。
- *
- * 注意：此 key 格式（scope:kind:contentHash）比 schema.js 中的
- * createCanonicalKey（kind:scope:projectId:agentId:contentHash）
- * 更简短，因为合并阶段只关心 scope/kind/内容的唯一性。
- *
- * @param {Object} memory - 记忆记录
- * @returns {string} canonicalKey
- */
-export function buildCanonicalKey(memory) {
-  const contentHash = createHash('sha256')
-    .update(normalizeContent(memory.content ?? memory.text ?? ''))
-    .digest('hex')
-    .slice(0, 12);
-  return `${memory.scope}:${memory.kind}:${contentHash}`;
-}
 
 /**
  * 按 canonicalKey 去重合并记录数组。
@@ -38,7 +16,7 @@ export function mergeByCanonicalKey(records) {
   const byKey = new Map();
 
   for (const record of records) {
-    const key = buildCanonicalKey(record);
+    const key = createCanonicalKey(record);
     const existing = byKey.get(key);
     if (!existing || new Date(record.updatedAt) > new Date(existing.updatedAt)) {
       byKey.set(key, record);
@@ -298,14 +276,14 @@ export function mergePendingToStore(pendingDir, storePath) {
   }
 
   // 收集 pending records 的 canonicalKeys（去重）
-  const pendingKeys = new Set(pendingRecords.map(r => buildCanonicalKey(r)));
+  const pendingKeys = new Set(pendingRecords.map(r => createCanonicalKey(r)));
 
   // 合并所有记录并去重
   const allRecords = [...existingRecords, ...pendingRecords];
   const merged = mergeByCanonicalKey(allRecords);
 
   // 计算实际合并数量：pending 中有多少 canonicalKey 出现在最终结果中
-  const mergedKeys = new Set(merged.map(r => buildCanonicalKey(r)));
+  const mergedKeys = new Set(merged.map(r => createCanonicalKey(r)));
   let mergedCount = 0;
   for (const key of pendingKeys) {
     if (mergedKeys.has(key)) {

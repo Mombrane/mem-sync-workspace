@@ -1,5 +1,5 @@
 import { readJSONL, writeJSONL } from './repo-store.js';
-import { buildCanonicalKey } from './merge.js';
+import { createCanonicalKey } from './schema.js';
 import fs from 'node:fs';
 
 /**
@@ -40,7 +40,7 @@ export async function compactMemories(opts) {
   // 3. Group candidates by canonicalKey
   const groups = new Map();
   for (const record of candidates) {
-    const key = buildCanonicalKey(record);
+    const key = createCanonicalKey(record);
     if (!groups.has(key)) {
       groups.set(key, []);
     }
