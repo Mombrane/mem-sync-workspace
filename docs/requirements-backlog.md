@@ -6,11 +6,11 @@
 ---
 
 ## 📊 需求统计
-- 总计: 4 个待处理需求
-- 🔴 高优先级: 1 个
+- 总计: 3 个待处理需求
+- 🔴 高优先级: 0 个
 - 🟡 中优先级: 3 个
 - 🟢 低优先级: 0 个
-- ✅ 已完成: 24 个
+- ✅ 已完成: 25 个
 
 ---
 
@@ -18,7 +18,7 @@
 | ID | 需求描述 | 来源文档 | 状态 | 依赖 | 子需求 |
 |----|----------|----------|------|------|--------|
 | REQ-011 | Recall 正确性治理与排序约束 | 代码分析 + OMP 对照分析 | ✅ 已完成 | REQ-004 | supersedes 排除 + 质量加权排序 + veracity 评分 + MMR 质量感知 |
-| REQ-012 | Canonical key 与合并语义统一 | 代码分析 + OMP 对照分析 | 🔄 待处理 | REQ-011 | 统一 `schema.js:createCanonicalKey` 与 `merge.js:buildCanonicalKey` 的身份模型；避免跨 `projectId` / `agentId` / scope 的同文案记忆被错误合并；补齐 supersede / conflict review 语义 |
+| REQ-012 | Canonical key 与合并语义统一 | 代码分析 + OMP 对照分析 | ✅ 已完成 | REQ-011 | 统一 `schema.js:createCanonicalKey` 与 `merge.js:buildCanonicalKey` 的身份模型；避免跨 `projectId` / `agentId` / scope 的同文案记忆被错误合并；补齐 supersede / conflict review 语义 |
 
 ## 🟡 中优先级
 | ID | 需求描述 | 来源文档 | 状态 | 依赖 | 子需求 |
@@ -128,6 +128,7 @@
 | REQ-007 | 加密能力测试稳定性修复 | 2026-06-03 | 代码审计 | - |
 | REQ-008 | 旧格式导入命令（legacy import） | 2026-06-03 | completion-plan.md | - |
 | REQ-011 | Recall 正确性治理与排序约束 | 2026-06-03 | 代码分析 + OMP 对照分析 | [change](../openspec/changes/req011-recall-correctness) |
+| REQ-012 | Canonical key 与合并语义统一 | 2026-06-03 | 代码分析 + OMP 对照分析 | [change](../openspec/changes/req012-canonical-key-unification) |
 
 ---
 
@@ -142,6 +143,7 @@
 ---
 
 ## 🔄 更新日志
+- 2026-06-03: 完成 REQ-012 Canonical key 与合并语义统一 — 删除 buildCanonicalKey，统一使用 createCanonicalKey，655 测试全绿
 - 2026-06-03: 完成 REQ-011 Recall 正确性治理与排序约束 — supersedes 排除、confidence/importance/veracity 质量加权排序、MMR 质量感知，6 个新测试，652 测试全绿
 - 2026-06-03: 完成 REQ-008 旧格式导入命令 — 添加 `import legacy` 子命令，支持 `--from`/`--to` 参数，2 个新测试
 - 2026-06-03: 完成 REQ-007 加密能力测试稳定性修复（已由之前的会话修复，所有 encryption 测试通过）
