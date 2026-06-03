@@ -65,7 +65,11 @@ fi
 
 # ─── 执行测试 ────────────────────────────────────────────────────────
 
-log "🚀 开始执行自动测试${IS_FOLLOWUP && echo '（复查）' || echo ''}"
+FOLLOWUP_SUFFIX=""
+if $IS_FOLLOWUP; then
+  FOLLOWUP_SUFFIX="（复查）"
+fi
+log "🚀 开始执行自动测试${FOLLOWUP_SUFFIX}"
 
 cd "$PROJECT_ROOT"
 
