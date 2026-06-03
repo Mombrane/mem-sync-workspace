@@ -84,6 +84,8 @@ try {
     await exportMemories();
   } else if (command === 'index') {
     handleIndexCommand(args);
+  } else if (command === 'add') {
+    await rememberCommand(args);
   } else {
     printHelp();
     process.exitCode = command ? 1 : 0;
@@ -161,6 +163,7 @@ Usage:
   mem-sync show <id> [--repo <path>]
   mem-sync forget <id> [--reason <text>] [--repo <path>]
   mem-sync remember <content> [--kind kind] [--scope scope] [--tag tag] [...]
+  mem-sync add <content>              (alias for remember)
   mem-sync recall <query> [--format markdown|json|memories] [--limit n] [...]
   mem-sync retain --transcript-file <path> --pending --device <id> [--project-id id] [--agent-id id]
   mem-sync context [--mode startup|recall] [--format markdown|json|memories] [--limit n] [--project-id id] [--project path]

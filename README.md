@@ -13,7 +13,7 @@
 
 ```bash
 npm test
-node ./src/cli.js add "User prefers concise Chinese replies" --scope assistant --source codex
+node ./src/cli.js remember "User prefers concise Chinese replies" --scope assistant --source codex
 node ./src/cli.js list
 node ./src/cli.js export
 node ./src/cli.js index rebuild
@@ -59,7 +59,7 @@ The index database (`index.sqlite`) is stored in `.mem-sync/.cache/` and should 
 
 ## Roadmap
 
-The current prototype still stores memories in `.mem-sync/memories.json`. The next implementation phase migrates the source of truth to Git-friendly JSONL files, then layers local FTS recall and Git sync on top.
+The current prototype stores memories in `.mem-sync/memories.jsonl` (JSONL format). Local FTS recall and Git sync are implemented and available.
 
 ## GitHub Sync Model
 

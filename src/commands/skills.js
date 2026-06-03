@@ -1,10 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
 import { generateSkills } from '../skills-engine.js';
 
-const HOME = os.homedir();
-const DEFAULT_REPO = path.join(HOME, '.memcli', 'default');
+const DEFAULT_REPO = path.resolve(process.env.MEM_SYNC_HOME ?? '.mem-sync');
 
 /**
  * skills 命令：解析命令行参数，调用 skills engine 或读取已有 SKILL.md。

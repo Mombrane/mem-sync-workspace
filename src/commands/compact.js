@@ -1,9 +1,7 @@
 import path from 'node:path';
-import os from 'node:os';
 import { compactMemories } from '../compact-engine.js';
 
-const HOME = os.homedir();
-const DEFAULT_REPO = path.join(HOME, '.memcli', 'default');
+const DEFAULT_REPO = path.resolve(process.env.MEM_SYNC_HOME ?? '.mem-sync');
 
 /**
  * compact 命令：解析命令行参数，调用 compactEngine 去重合并。

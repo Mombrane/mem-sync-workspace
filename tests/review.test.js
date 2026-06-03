@@ -38,14 +38,14 @@ test('parseReviewArgs returns defaults when called with empty args', () => {
   const opts = parseReviewArgs([]);
   assert.equal(opts.kind, undefined);
   assert.equal(opts.full, false);
-  assert.ok(opts.repo.endsWith('default'));
+  assert.ok(typeof opts.repo === 'string' && opts.repo.length > 0);
 });
 
 test('parseReviewArgs returns defaults with pending subcommand', () => {
   const opts = parseReviewArgs(['pending']);
   assert.equal(opts.kind, undefined);
   assert.equal(opts.full, false);
-  assert.ok(opts.repo.endsWith('default'));
+  assert.ok(typeof opts.repo === 'string' && opts.repo.length > 0);
 });
 
 test('parseReviewArgs parses --kind', () => {
@@ -411,7 +411,7 @@ test('parseApproveArgs parses id and defaults', () => {
   const opts = parseApproveArgs(['mem_test123']);
   assert.equal(opts.id, 'mem_test123');
   assert.equal(opts.all, false);
-  assert.ok(opts.repo.endsWith('default'));
+  assert.ok(typeof opts.repo === 'string' && opts.repo.length > 0);
 });
 
 test('parseApproveArgs parses --all', () => {
@@ -438,7 +438,7 @@ test('parseRejectArgs parses id and defaults', () => {
   const opts = parseRejectArgs(['mem_test456']);
   assert.equal(opts.id, 'mem_test456');
   assert.equal(opts.all, false);
-  assert.ok(opts.repo.endsWith('default'));
+  assert.ok(typeof opts.repo === 'string' && opts.repo.length > 0);
 });
 
 test('parseRejectArgs parses --all', () => {

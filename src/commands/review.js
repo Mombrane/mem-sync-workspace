@@ -1,11 +1,9 @@
 import path from 'node:path';
-import os from 'node:os';
 import { readPendingFiles, findAndRemoveFromPending, removeAllPending } from '../merge.js';
 import { normalizeMemoryInput } from '../schema.js';
 import { appendJSONL } from '../repo-store.js';
 
-const HOME = os.homedir();
-const DEFAULT_REPO = path.join(HOME, '.memcli', 'default');
+const DEFAULT_REPO = path.resolve(process.env.MEM_SYNC_HOME ?? '.mem-sync');
 
 const PREVIEW_LENGTH = 120;
 
