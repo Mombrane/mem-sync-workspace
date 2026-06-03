@@ -47,9 +47,9 @@ test('list formats string, object, and missing source through public CLI output'
 
     const result = run(['list'], { MEM_SYNC_HOME: dir });
     assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /mem_string\tuser\tcodex\tstring source/);
-    assert.match(result.stdout, /mem_agent\tuser\tcursor\tagent source/);
-    assert.match(result.stdout, /mem_unknown\tuser\tunknown\tunknown source/);
+    assert.match(result.stdout, /mem_string\tpersonal\tcodex\tstring source/);
+    assert.match(result.stdout, /mem_agent\tpersonal\tcursor\tagent source/);
+    assert.match(result.stdout, /mem_unknown\tpersonal\tunknown\tunknown source/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

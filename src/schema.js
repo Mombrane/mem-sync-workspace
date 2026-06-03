@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
 
 export const MEMORY_KINDS = ['preference', 'identity', 'project_fact', 'decision', 'workflow', 'correction', 'warning', 'episode'];
-export const MEMORY_SCOPES = ['user', 'project', 'agent', 'global', 'local-only'];
+// 'user' is deprecated — retained for backward compatibility with existing records.
+// New code should use 'personal' for user-scoped memories.
+export const MEMORY_SCOPES = ['personal', 'project', 'agent', 'global', 'local-only', 'team', 'user'];
 export const MEMORY_VERACITIES = ['stated', 'inferred', 'tool', 'imported', 'unknown'];
 export const VERACITY_SCORES = {
   stated: 1.0,

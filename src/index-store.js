@@ -13,6 +13,8 @@ import {
   mmrRerank
 } from './embedding-cache.js';
 
+const SCOPE_WEIGHTS = { personal: 1.0, project: 0.8, team: 0.6, global: 0.4, agent: 0.3, 'local-only': 0.2 };
+
 const DB_FILENAME = 'index.sqlite';
 
 /**
@@ -701,6 +703,11 @@ export async function searchIndexHybrid(cacheDir, options = {}) {
     }
 
     // Re-sort by hybrid score (higher = better)
+    // Apply scope weighting before sort
+    for (const result of ftsResults) {
+      const scopeWeight = SCOPE_WEIGHTS[result.scope] ?? 0.4;
+      result._hybridScore = (result._hybridScore ?? 0) * scopeWeight;
+    }
     ftsResults.sort((a, b) => (b._hybridScore ?? 0) - (a._hybridScore ?? 0));
 
     ftsResults = excludeSuperseded(ftsResults);
@@ -918,11 +925,13 @@ export function searchIndex(cacheDir, optionsOrQuery, legacyLimit) {
 
     results = excludeSuperseded(results);
 
-    // 质量加权排序：将 BM25 rank 乘以质量乘数（confidence + importance + veracity），
-    // 使高质量记忆在纯 FTS 路径中也获得更高排名。
+    // 质量加权排序：将 BM25 rank 乘以质量乘数（confidence + importance + veracity）
+    // 再乘以 scope 权重，使高质量且更个人化的记忆获得更高排名。
     results.sort((a, b) => {
-      const scoreA = Math.abs(a._rank ?? 0) * getQualityMultiplier(a);
-      const scoreB = Math.abs(b._rank ?? 0) * getQualityMultiplier(b);
+      const scopeWeightA = SCOPE_WEIGHTS[a.scope] ?? 0.4;
+      const scopeWeightB = SCOPE_WEIGHTS[b.scope] ?? 0.4;
+      const scoreA = Math.abs(a._rank ?? 0) * getQualityMultiplier(a) * scopeWeightA;
+      const scoreB = Math.abs(b._rank ?? 0) * getQualityMultiplier(b) * scopeWeightB;
       return scoreB - scoreA; // 降序，高分在前
     });
 

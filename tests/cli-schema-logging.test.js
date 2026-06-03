@@ -16,7 +16,7 @@ test('remember emits schema diagnostics to stderr and export remains JSON-only',
       'remember',
       '用户偏好简洁中文回答。',
       '--scope',
-      'user'
+      'personal'
     ], {
       env: { ...process.env, MEM_SYNC_HOME: memSyncHome },
       encoding: 'utf8'
@@ -35,7 +35,7 @@ test('remember emits schema diagnostics to stderr and export remains JSON-only',
 
     assert.equal(listResult.status, 0);
     assert.equal(listResult.stderr, '');
-    assert.match(listResult.stdout, /\tuser\tmanual\t用户偏好简洁中文回答。/);
+    assert.match(listResult.stdout, /\tpersonal\tmanual\t用户偏好简洁中文回答。/);
     assert.doesNotMatch(listResult.stdout, /undefined|\[object Object\]/);
 
     const exportResult = spawnSync(process.execPath, [CLI_PATH, 'export'], {

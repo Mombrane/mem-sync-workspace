@@ -58,7 +58,7 @@ test('remember with --kind and --scope applies them to the record', async () => 
     const result = spawnSync(process.execPath, [
       CLI_PATH, 'remember', '用户偏好暗色主题',
       '--kind', 'preference',
-      '--scope', 'user'
+      '--scope', 'personal'
     ], {
       env: { ...process.env, MEM_SYNC_HOME: memSyncHome },
       encoding: 'utf8'
@@ -69,7 +69,7 @@ test('remember with --kind and --scope applies them to the record', async () => 
     const records = await readJSONLFile(memSyncHome);
     assert.equal(records.length, 1);
     assert.equal(records[0].kind, 'preference');
-    assert.equal(records[0].scope, 'user');
+    assert.equal(records[0].scope, 'personal');
   } finally {
     await rm(memSyncHome, { recursive: true, force: true });
   }

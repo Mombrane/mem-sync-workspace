@@ -57,12 +57,13 @@ test('createMemoryStore.add returns schema v1-compatible memories', async () => 
     assert.equal(memory.content, '用户偏好简洁中文回答。');
     assert.equal(memory.summary, '用户偏好简洁中文回答。');
     assert.equal(memory.kind, 'preference');
-    assert.equal(memory.scope, 'user');
+    // 'user' scope is normalized to 'personal' by normalizeLegacyScope
+    assert.equal(memory.scope, 'personal');
     assert.equal(memory.confidence, 1);
     assert.equal(memory.veracity, 'stated');
     assert.deepEqual(memory.tags, ['language']);
     assert.ok(memory.id.startsWith('mem_'));
-    assert.ok(memory.canonicalKey.startsWith('preference:user:'));
+    assert.ok(memory.canonicalKey.startsWith('preference:personal:'));
     assert.deepEqual(logs, [
       '[mem-sync:schema] normalize:start',
       '[mem-sync:schema] validate:ok',

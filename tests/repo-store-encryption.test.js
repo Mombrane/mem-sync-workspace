@@ -78,7 +78,7 @@ test('appendJSONL encrypts when config exists', async () => {
 
   const { dir, storePath, cleanup } = await setupEncryptedStore('append-enc');
   try {
-    const record = { id: 'mem_1', content: 'secret data', scope: 'user' };
+    const record = { id: 'mem_1', content: 'secret data', scope: 'personal' };
     await appendJSONL(record, storePath);
 
     // 验证文件内容包含 age 加密头部（非明文 JSON）
@@ -99,7 +99,7 @@ test('readJSONL decrypts encrypted lines', async () => {
 
   const { dir, storePath, cleanup } = await setupEncryptedStore('read-enc');
   try {
-    const record = { id: 'mem_1', content: 'hello world', scope: 'user' };
+    const record = { id: 'mem_1', content: 'hello world', scope: 'personal' };
     await appendJSONL(record, storePath);
 
     const records = await readJSONL(storePath);
@@ -219,7 +219,7 @@ test('readJSONLStream decrypts encrypted lines', async () => {
 test('plaintext repos work without encryption config (no regression)', async () => {
   const { dir, storePath, cleanup } = await setupPlaintextStore('no-regression');
   try {
-    const record1 = { id: 'mem_a', content: 'hello', scope: 'user' };
+    const record1 = { id: 'mem_a', content: 'hello', scope: 'personal' };
     const record2 = { id: 'mem_b', content: 'world', scope: 'global' };
 
     // appendJSONL 应以明文写入

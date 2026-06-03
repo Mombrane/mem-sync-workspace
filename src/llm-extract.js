@@ -138,7 +138,7 @@ function buildSinglePassPrompt(transcript) {
 返回一个 JSON 对象数组，每个对象包含：
 - "content"：一条简洁、事实性的记忆陈述（不要用"用户说..."这类前缀）
 - "kind"：${kindsStr} 之一
-- "scope"："user"、"project" 或 "global"
+- "scope"："personal"、"project"、"team" 或 "global"
 - "confidence"：0.0 到 1.0 之间的数字，表示你对这条记忆的信心
 - "importance"：0.0 到 1.0 之间的数字，表示这条记忆有多重要
 
@@ -212,7 +212,7 @@ ${transcriptStr}
 对于每条匹配的记忆，返回一个 JSON 对象：
 - "content"：一条简洁、事实性的记忆陈述
 - "kind"：${targetKinds} 之一
-- "scope"："user"、"project" 或 "global"
+- "scope"："personal"、"project"、"team" 或 "global"
 - "confidence"：0.0 到 1.0 之间的信心分数
 - "importance"：0.0 到 1.0 之间的重要性分数
 

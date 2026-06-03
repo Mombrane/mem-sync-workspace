@@ -348,7 +348,7 @@ function outputContextMemories(profile, summary, projectSummary, memories, proje
     writeMemoryBlock({
       id: `profile-${projectId}`,
       kind: 'preference',
-      scope: 'user',
+      scope: 'personal',
       confidence: 1,
       importance: 1,
       source: { type: 'summary' },

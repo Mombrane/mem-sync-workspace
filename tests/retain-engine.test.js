@@ -11,7 +11,7 @@ test('extractCandidates detects explicit 记住 pattern', () => {
   const candidates = extractCandidates(transcript);
   assert.equal(candidates.length, 1);
   assert.equal(candidates[0].kind, 'preference');
-  assert.equal(candidates[0].scope, 'user');
+  assert.equal(candidates[0].scope, 'personal');
   assert.equal(candidates[0].confidence, 0.95);
   assert.equal(candidates[0].veracity, 'stated');
   assert.equal(candidates[0].source.type, 'retain');
@@ -25,7 +25,7 @@ test('extractCandidates detects explicit 请记住 pattern', () => {
   const candidates = extractCandidates(transcript);
   assert.equal(candidates.length, 1);
   assert.equal(candidates[0].kind, 'preference');
-  assert.equal(candidates[0].scope, 'user');
+  assert.equal(candidates[0].scope, 'personal');
   assert.equal(candidates[0].content, '这个项目使用 pnpm');
 });
 
@@ -48,7 +48,7 @@ test('extractCandidates detects 以后 preference pattern', () => {
   const candidates = extractCandidates(transcript);
   assert.equal(candidates.length, 1);
   assert.equal(candidates[0].kind, 'preference');
-  assert.equal(candidates[0].scope, 'user');
+  assert.equal(candidates[0].scope, 'personal');
   assert.equal(candidates[0].confidence, 0.85);
   assert.equal(candidates[0].veracity, 'stated');
 });

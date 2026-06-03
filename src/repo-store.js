@@ -71,7 +71,9 @@ export async function readJSONL(storePath = resolveStorePath()) {
           try {
             if (encConfig) {
               const decrypted = await decryptLine(block, encConfig);
-              records.push(JSON.parse(decrypted));
+              const record = JSON.parse(decrypted);
+              if (record.scope === 'user') record.scope = 'personal';
+              records.push(record);
             }
             // 无加密配置时跳过加密行（无法解密）
           } catch {
@@ -82,7 +84,9 @@ export async function readJSONL(storePath = resolveStorePath()) {
           try {
             if (encConfig) {
               const decrypted = await decryptLine(trimmed, encConfig);
-              records.push(JSON.parse(decrypted));
+              const record = JSON.parse(decrypted);
+              if (record.scope === 'user') record.scope = 'personal';
+              records.push(record);
             }
           } catch {
             // 解密失败时跳过
@@ -91,7 +95,9 @@ export async function readJSONL(storePath = resolveStorePath()) {
         }
       } else {
         try {
-          records.push(JSON.parse(trimmed));
+          const record = JSON.parse(trimmed);
+          if (record.scope === 'user') record.scope = 'personal';
+          records.push(record);
         } catch {
           // JSONL 行损坏时跳过并继续，避免单行错误阻塞全部读取
         }
@@ -135,7 +141,9 @@ export async function* readJSONLStream(storePath = resolveStorePath()) {
       const trimmed = line.trim();
       if (!trimmed) continue;
       try {
-        yield JSON.parse(trimmed);
+        const record = JSON.parse(trimmed);
+        if (record.scope === 'user') record.scope = 'personal';
+        yield record;
       } catch {
         // 跳过损坏行，不中断流式读取
       }

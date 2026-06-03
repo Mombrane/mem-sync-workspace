@@ -28,7 +28,7 @@ test('appendJSONL + readJSONL roundtrip', async () => {
   const { dir, storePath } = await tempPath('roundtrip')();
 
   try {
-    const record1 = { id: 'mem_a', content: 'hello', scope: 'user' };
+    const record1 = { id: 'mem_a', content: 'hello', scope: 'personal' };
     const record2 = { id: 'mem_b', content: 'world', scope: 'global' };
 
     await appendJSONL(record1, storePath);
@@ -290,6 +290,88 @@ test('resolveLegacyStorePath points to .json extension', () => {
 /**
  * writeMemories 向后兼容测试：验证 writeMemories 输出 JSONL 格式。
  */
+/**
+ * REQ-014: Scope bank model — readJSONL normalizes legacy 'user' scope to 'personal'.
+ * Records written with scope: 'user' should be read back as scope: 'personal'.
+ */
+test('readJSONL maps legacy user scope to personal', async () => {
+  const { dir, storePath } = await tempPath('scope-migrate')();
+
+  try {
+    const { mkdir } = await import('node:fs/promises');
+    await mkdir(dir, { recursive: true });
+
+    // Write a record with legacy scope: 'user'
+    const content = JSON.stringify({ id: 'mem_legacy_user', content: 'old user scope', scope: 'user' }) + '\n';
+    await writeFile(storePath, content, 'utf8');
+
+    const records = await readJSONL(storePath);
+    assert.equal(records.length, 1);
+    assert.equal(records[0].id, 'mem_legacy_user');
+    assert.equal(records[0].scope, 'personal');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('readJSONLStream maps legacy user scope to personal', async () => {
+  const { dir, storePath } = await tempPath('scope-stream')();
+
+  try {
+    const { mkdir } = await import('node:fs/promises');
+    await mkdir(dir, { recursive: true });
+
+    const lines = [
+      JSON.stringify({ id: 'mem_a', content: 'first', scope: 'user' }),
+      JSON.stringify({ id: 'mem_b', content: 'second', scope: 'global' }),
+      JSON.stringify({ id: 'mem_c', content: 'third', scope: 'user' })
+    ].join('\n') + '\n';
+    await writeFile(storePath, lines, 'utf8');
+
+    const records = [];
+    for await (const record of readJSONLStream(storePath)) {
+      records.push(record);
+    }
+
+    assert.equal(records.length, 3);
+    assert.equal(records[0].scope, 'personal');
+    assert.equal(records[1].scope, 'global');
+    assert.equal(records[2].scope, 'personal');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('readJSONL leaves non-user scopes unchanged', async () => {
+  const { dir, storePath } = await tempPath('scope-unchanged')();
+
+  try {
+    const { mkdir } = await import('node:fs/promises');
+    await mkdir(dir, { recursive: true });
+
+    const lines = [
+      JSON.stringify({ id: 'mem_1', content: 'a', scope: 'global' }),
+      JSON.stringify({ id: 'mem_2', content: 'b', scope: 'project' }),
+      JSON.stringify({ id: 'mem_3', content: 'c', scope: 'agent' }),
+      JSON.stringify({ id: 'mem_4', content: 'd', scope: 'local-only' }),
+      JSON.stringify({ id: 'mem_5', content: 'e', scope: 'personal' }),
+      JSON.stringify({ id: 'mem_6', content: 'f', scope: 'team' })
+    ].join('\n') + '\n';
+    await writeFile(storePath, lines, 'utf8');
+
+    const records = await readJSONL(storePath);
+    assert.equal(records.length, 6);
+    assert.equal(records[0].scope, 'global');
+    assert.equal(records[1].scope, 'project');
+    assert.equal(records[2].scope, 'agent');
+    assert.equal(records[3].scope, 'local-only');
+    assert.equal(records[4].scope, 'personal');
+    assert.equal(records[5].scope, 'team');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('writeMemories outputs JSONL format', async () => {
   const { dir, storePath } = await tempPath('write-memories')();
 

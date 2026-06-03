@@ -290,6 +290,98 @@ test('computeTrustTier handles empty string reviewer as no reviewer', () => {
   assert.equal(computeTrustTier(record), 'medium');
 });
 
+// ─── REQ-014: Scope bank model — personal and team scopes ───────────
+
+test('personal scope is valid and passes validateMemory', () => {
+  const memory = normalizeMemoryInput({
+    content: '个人偏好设置',
+    scope: 'personal',
+    now: new Date('2026-06-03T10:00:00.000Z')
+  });
+
+  assert.equal(memory.scope, 'personal');
+  // validateMemory is called internally by normalizeMemoryInput; no throw means it passed
+  assert.ok(memory.canonicalKey.startsWith('episode:personal:'));
+});
+
+test('team scope is valid and passes validateMemory', () => {
+  const memory = normalizeMemoryInput({
+    content: 'Team coding standards',
+    scope: 'team',
+    now: new Date('2026-06-03T10:00:00.000Z')
+  });
+
+  assert.equal(memory.scope, 'team');
+  assert.ok(memory.canonicalKey.startsWith('episode:team:'));
+});
+
+test('validateMemory accepts personal scope directly', () => {
+  const record = {
+    schemaVersion: 1,
+    id: 'mem_personal',
+    canonicalKey: 'episode:personal:::x',
+    kind: 'episode',
+    scope: 'personal',
+    content: 'personal content',
+    summary: 'personal summary',
+    source: { type: 'manual' },
+    evidence: [],
+    confidence: 1,
+    veracity: 'stated',
+    importance: 0.5,
+    createdAt: '2026-06-03T10:00:00.000Z',
+    updatedAt: '2026-06-03T10:00:00.000Z',
+    validUntil: null,
+    deletedAt: null,
+    supersedes: [],
+    tags: []
+  };
+  assert.doesNotThrow(() => validateMemory(record));
+});
+
+test('validateMemory accepts team scope directly', () => {
+  const record = {
+    schemaVersion: 1,
+    id: 'mem_team',
+    canonicalKey: 'episode:team:::x',
+    kind: 'episode',
+    scope: 'team',
+    content: 'team content',
+    summary: 'team summary',
+    source: { type: 'manual' },
+    evidence: [],
+    confidence: 1,
+    veracity: 'stated',
+    importance: 0.5,
+    createdAt: '2026-06-03T10:00:00.000Z',
+    updatedAt: '2026-06-03T10:00:00.000Z',
+    validUntil: null,
+    deletedAt: null,
+    supersedes: [],
+    tags: []
+  };
+  assert.doesNotThrow(() => validateMemory(record));
+});
+
+test('user scope is still valid for backward compatibility', () => {
+  const memory = normalizeMemoryInput({
+    content: 'legacy user scoped content',
+    scope: 'user',
+    now: new Date('2026-06-03T10:00:00.000Z')
+  });
+
+  assert.equal(memory.scope, 'user');
+  assert.ok(memory.canonicalKey.startsWith('episode:user:'));
+});
+
+test('normalizeMemoryInput rejects invalid scope', () => {
+  assert.throws(() => normalizeMemoryInput({
+    content: 'test',
+    scope: 'invalid-scope',
+    now: new Date('2026-06-03T10:00:00.000Z')
+  }), /scope/);
+});
+
 test('normalizeMemoryInput rejects invalid timestamp fields with field names', () => {
   assert.throws(() => normalizeMemoryInput({ content: 'x', now: 'not-date' }), /now must be a valid ISO timestamp/);
   assert.throws(() => normalizeMemoryInput({ content: 'x', createdAt: 'not-date' }), /createdAt must be a valid ISO timestamp/);

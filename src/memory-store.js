@@ -96,8 +96,11 @@ function legacySourceName(source) {
 
 function normalizeLegacyScope(scope) {
   // 旧原型和 README 示例使用 assistant；Schema v1 中对应 agent。
+  // 'user' 已重命名为 'personal'，保留映射确保旧数据平滑迁移。
   // 在 store 边界做兼容映射，避免把旧命名泄漏进新的持久化 schema。
-  return scope === 'assistant' ? 'agent' : scope;
+  if (scope === 'assistant') return 'agent';
+  if (scope === 'user') return 'personal';
+  return scope;
 }
 
 function defaultLogger() {}

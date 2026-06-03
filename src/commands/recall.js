@@ -142,10 +142,10 @@ export function parseRecallArgs(args) {
       );
       index += 2;
     } else if (arg === '--scope') {
-      searchOptions.scope = requireValue(args, index, '--scope');
+      searchOptions.scope = validateEnum(requireValue(args, index, '--scope'), MEMORY_SCOPES, '--scope');
       index += 2;
     } else if (arg === '--kind') {
-      searchOptions.kind = requireValue(args, index, '--kind');
+      searchOptions.kind = validateEnum(requireValue(args, index, '--kind'), MEMORY_KINDS, '--kind');
       index += 2;
     } else if (arg === '--tag') {
       tags.push(requireValue(args, index, '--tag'));
@@ -173,7 +173,7 @@ export function parseRecallArgs(args) {
       searchOptions.agentId = requireValue(args, index, '--agent-id');
       index += 2;
     } else if (arg === '--veracity') {
-      searchOptions.veracity = requireValue(args, index, '--veracity');
+      searchOptions.veracity = validateEnum(requireValue(args, index, '--veracity'), MEMORY_VERACITIES, '--veracity');
       index += 2;
     } else if (arg === '--author') {
       searchOptions.author = requireValue(args, index, '--author');

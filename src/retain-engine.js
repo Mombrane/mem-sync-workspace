@@ -32,7 +32,7 @@ const RULES = [
     extract: (msg, _options) => ({
       content: extractSentence(msg.content, /(?:记住|remember|请记住|记一下)[:：]?\s*(.*)/i),
       kind: 'preference',
-      scope: 'user',
+      scope: 'personal',
       confidence: 0.95,
       veracity: 'stated'
     })
@@ -43,7 +43,7 @@ const RULES = [
     extract: (msg, _options) => ({
       content: msg.content,
       kind: 'preference',
-      scope: 'user',
+      scope: 'personal',
       confidence: 0.85,
       veracity: 'stated'
     })

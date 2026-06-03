@@ -59,7 +59,7 @@ test('retain --pending writes candidates to pending/<device>.jsonl', async () =>
     const records = await readPendingFile(memSyncHome, 'test-device');
     assert.equal(records.length, 1);
     assert.equal(records[0].kind, 'preference');
-    assert.equal(records[0].scope, 'user');
+    assert.equal(records[0].scope, 'personal');
     assert.equal(records[0].content, '我更喜欢暗色主题');
     assert.equal(records[0].source.type, 'retain');
     assert.equal(records[0].source.device, 'test-device');
@@ -468,7 +468,7 @@ test('retain produces valid Schema v1 records', async () => {
     assert.ok(records[0].id, 'record should have an id');
     assert.ok(records[0].canonicalKey, 'record should have a canonicalKey');
     assert.equal(records[0].kind, 'preference');
-    assert.equal(records[0].scope, 'user');
+    assert.equal(records[0].scope, 'personal');
     assert.equal(records[0].source.type, 'retain');
     assert.equal(records[0].source.device, 'test-device');
     assert.ok(Array.isArray(records[0].evidence));

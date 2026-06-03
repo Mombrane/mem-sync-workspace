@@ -23,7 +23,7 @@ test('remember 创建记忆后可通过 recall 找到', async (t) => {
   t.after(() => cleanupTestHome(env));
 
   // 写入一条记忆（使用英文避免 trigram 分词问题）
-  const addResult = runCli(env.repo, ['remember', 'User prefers concise Chinese replies', '--kind', 'preference', '--scope', 'user']);
+  const addResult = runCli(env.repo, ['remember', 'User prefers concise Chinese replies', '--kind', 'preference', '--scope', 'personal']);
   assert.equal(addResult.status, 0, `remember 失败: ${addResult.stderr}`);
   const memoryId = addResult.stdout.trim();
   assert.ok(memoryId.startsWith('mem_'), `ID 格式不对: ${memoryId}`);
@@ -38,7 +38,7 @@ test('remember 创建记忆后可通过 recall 找到', async (t) => {
   const output = JSON.parse(recallResult.stdout);
   assert.ok(output.count >= 1, `期望至少 1 条结果，得到 ${output.count}`);
   assert.equal(output.results[0].memory.kind, 'preference');
-  assert.equal(output.results[0].memory.scope, 'user');
+  assert.equal(output.results[0].memory.scope, 'personal');
 });
 
 test('remember 必须有内容，否则报错', () => {
