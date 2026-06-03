@@ -1,16 +1,16 @@
 # Mem Sync 需求待办清单
 
 > 由定时任务自动分析生成，也可手动编辑调整优先级
-> 最后更新: 2026-06-04（REQ-014 scope bank model 完成）
+> 最后更新: 2026-06-04（REQ-015 recall 回归测试矩阵完成）
 
 ---
 
 ## 📊 需求统计
-- 总计: 1 个待处理需求
+- 总计: 0 个待处理需求
 - 🔴 高优先级: 0 个
-- 🟡 中优先级: 1 个
+- 🟡 中优先级: 0 个
 - 🟢 低优先级: 0 个
-- ✅ 已完成: 27 个
+- ✅ 已完成: 28 个
 
 ---
 
@@ -25,7 +25,7 @@
 |----|----------|----------|------|------|--------|
 | REQ-013 | Memory provenance 与审核轨迹补强 | OMP 对照分析 | ✅ 已完成 | REQ-011 | author/device/session/reviewer/reviewedAt/trustTier 字段 + review 注入 + recall 过滤 |
 | REQ-014 | Scope 升级为 bank / namespace 召回模型 | OMP 对照分析 | ✅ 已完成 | REQ-011, REQ-013 | personal/team 枚举 + user→personal 迁移 + scope 优先级加权 + CLI 验证修复 |
-| REQ-015 | Recall 回归测试矩阵与黄金语料集 | 质量设计 | 🔄 待处理 | REQ-011 | 建立固定 fixture / JSONL 语料，覆盖新旧冲突、真假冲突、跨项目冲突、相似文本冲突、团队共享冲突；为每个 query 固定预期 top-k 结果 |
+| REQ-015 | Recall 回归测试矩阵与黄金语料集 | 质量设计 | ✅ 已完成 | REQ-011 | 建立固定 fixture / JSONL 语料，覆盖新旧冲突、真假冲突、跨项目冲突、相似文本冲突、团队共享冲突；为每个 query 固定预期 top-k 结果 |
 
 ## 🟢 低优先级
 - 当前无低优先级待处理需求
@@ -131,6 +131,7 @@
 | REQ-012 | Canonical key 与合并语义统一 | 2026-06-03 | 代码分析 + OMP 对照分析 | [change](../openspec/changes/req012-canonical-key-unification) |
 | REQ-013 | Memory provenance 与审核轨迹补强 | 2026-06-03 | OMP 对照分析 | [change](../openspec/changes/req013-memory-provenance) |
 | REQ-014 | Scope 升级为 bank / namespace 召回模型 | 2026-06-04 | OMP 对照分析 | [change](../openspec/changes/req014-scope-bank-model) |
+| REQ-015 | Recall 回归测试矩阵与黄金语料集 | 2026-06-04 | 质量设计 | [change](../openspec/changes/req015-recall-regression) |
 
 ---
 
@@ -145,6 +146,7 @@
 ---
 
 ## 🔄 更新日志
+- 2026-06-04: 完成 REQ-015 Recall 回归测试矩阵与黄金语料集 — 22 条黄金语料覆盖 8 种场景（新旧冲突、真假冲突、跨项目、相似文本、团队共享、链式 supersedes、provenance 过滤、validUntil 边界），9 个回归测试，696 测试全绿
 - 2026-06-04: 完成 REQ-014 Scope 升级为 bank / namespace 召回模型 — 新增 personal/team scope，user→personal 自动迁移，scope 优先级加权排序（personal>project>team>global），CLI 验证一致性修复，687 测试全绿
 - 2026-06-03: 完成 REQ-012 Canonical key 与合并语义统一 — 删除 buildCanonicalKey，统一使用 createCanonicalKey，655 测试全绿
 - 2026-06-03: 完成 REQ-011 Recall 正确性治理与排序约束 — supersedes 排除、confidence/importance/veracity 质量加权排序、MMR 质量感知，6 个新测试，652 测试全绿
