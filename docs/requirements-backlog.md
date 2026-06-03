@@ -6,11 +6,11 @@
 ---
 
 ## 📊 需求统计
-- 总计: 2 个待处理需求
-- 🔴 高优先级: 1 个
-- 🟡 中优先级: 1 个
+- 总计: 0 个待处理需求
+- 🔴 高优先级: 0 个
+- 🟡 中优先级: 0 个
 - 🟢 低优先级: 0 个
-- ✅ 已完成: 21 个
+- ✅ 已完成: 23 个
 
 ---
 
@@ -19,12 +19,12 @@
 |----|----------|----------|------|------|--------|
 | REQ-005 | CLI 兼容性与 README 一致性修复 | `2026-06-02-completion-plan.md` + 代码审计 | ✅ 已完成 | - | 为 `remember` 增加 `add` alias；修正 README Quick Start；移除"JSONL 仍未落地"的过时 roadmap 描述；补齐帮助文本与真实命令的一致性 |
 | REQ-006 | Git 同步分支安全与命令执行硬化 | `2026-06-02-completion-plan.md` + 代码审计 | ✅ 已完成 | - | 将 `src/git.js` 剩余 shell-string Git 调用改为参数数组；取消硬编码 `origin/main`；支持默认分支发现；同步修正测试辅助中的硬编码 `main` |
-| REQ-007 | 加密能力测试稳定性修复 | 代码审计 | 🔄 待处理 | REQ-003 | 修复 `tests/encryption.test.js` 对本机 `age` 可用性的强假设；调整 `encryptLine` / `decryptLine` 的校验顺序；恢复 `npm test` 全量通过 |
+| REQ-007 | 加密能力测试稳定性修复 | 代码审计 | ✅ 已完成 | REQ-003 | 修复 `tests/encryption.test.js` 对本机 `age` 可用性的强假设；调整 `encryptLine` / `decryptLine` 的校验顺序；恢复 `npm test` 全量通过 |
 
 ## 🟡 中优先级
 | ID | 需求描述 | 来源文档 | 状态 | 依赖 | 子需求 |
 |----|----------|----------|------|------|--------|
-| REQ-008 | 旧格式导入命令（legacy import） | `2026-06-02-completion-plan.md` | 🔄 待处理 | - | 提供 `.mem-sync/memories.json` → `memories.jsonl` 导入迁移命令与测试，完成 legacy 数据升级路径 |
+| REQ-008 | 旧格式导入命令（legacy import） | `2026-06-02-completion-plan.md` | ✅ 已完成 | - | 提供 `.mem-sync/memories.json` → `memories.jsonl` 导入迁移命令与测试，完成 legacy 数据升级路径 |
 | REQ-009 | 维护命令默认仓库路径统一 | `2026-06-02-completion-plan.md` + 代码审计 | ✅ 已完成 | - | 将 `compact`、`summarize`、`review`、`skills` 从 `~/.memcli/default` 统一到 `MEM_SYNC_HOME ?? '.mem-sync'`，避免与其他命令默认行为不一致 |
 
 ## 🟢 低优先级
@@ -66,6 +66,8 @@
 | REQ-009 | 维护命令默认仓库路径统一 | 2026-06-03 | completion-plan.md + 代码审计 | - |
 | REQ-010 | 计划文档状态与当前实现对齐 | 2026-06-03 | completion-plan.md + 代码审计 | - |
 | REQ-006 | Git 同步分支安全与命令执行硬化 | 2026-06-03 | completion-plan.md + 代码审计 | [archive](../openspec/changes/archive/2026-06-03-harden-git-commands) |
+| REQ-007 | 加密能力测试稳定性修复 | 2026-06-03 | 代码审计 | - |
+| REQ-008 | 旧格式导入命令（legacy import） | 2026-06-03 | completion-plan.md | - |
 
 ---
 
@@ -79,6 +81,8 @@
 ---
 
 ## 🔄 更新日志
+- 2026-06-03: 完成 REQ-008 旧格式导入命令 — 添加 `import legacy` 子命令，支持 `--from`/`--to` 参数，2 个新测试
+- 2026-06-03: 完成 REQ-007 加密能力测试稳定性修复（已由之前的会话修复，所有 encryption 测试通过）
 - 2026-06-03: 完成 REQ-006 Git 同步分支安全与命令执行硬化 — 添加 getDefaultBranch()，消除 origin/main 硬编码，shell-string 改为参数数组
 - 2026-06-03: 完成 REQ-005 CLI 兼容性与 README 一致性修复 + REQ-009 默认仓库路径统一（一并完成）
 - 2026-06-03: 完成 REQ-010 计划文档状态与当前实现对齐
