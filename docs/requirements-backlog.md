@@ -32,13 +32,13 @@
 
 ---
 
-## 🔎 代码审计发现（2026-06-03）
-- `README.md` 仍使用 `node ./src/cli.js add ...` 作为 Quick Start，但 `src/cli.js` 当前没有 `add` 路由；实际执行会打印 help 并退出。
-- `README.md` 仍声称“当前 prototype 还在使用 `.mem-sync/memories.json`，后续再迁移到 JSONL”，与 `repo-store.js` / `remember.js` 的现实实现不一致。
-- `src/commands/compact.js`、`src/commands/summarize.js`、`src/commands/review.js` 仍默认指向 `~/.memcli/default`，与大多数命令已经采用的 `.mem-sync` / `MEM_SYNC_HOME` 约定不一致。
-- `src/git.js` 只对 `stageFile()` 和 `commit()` 做了参数数组防护；`fetch()`、`pullRebase()`、`push()` 仍依赖 shell-string 调用，并硬编码 `origin/main`。
-- `src/commands/import.js` 与 `tests/cli-import.test.js` 仍不存在，legacy `memories.json` 只有读取兼容，没有显式迁移入口。
-- 当前全量测试未全绿：`npm test` 共有 5 个失败，全部集中在 `tests/encryption.test.js`。其中 1 个来自本机未安装 `age` / `age-keygen`，其余 4 个来自 `src/encryption.js` 在校验 `mode` 之前先检查二进制可用性。
+## 🔎 代码审计发现（2026-06-03，已大部分修复）
+- ~~`README.md` 仍使用 `node ./src/cli.js add ...`~~ → ✅ 已修复（REQ-005）
+- ~~`README.md` 仍声称 `.memcli/memories.json`~~ → ✅ 已修复，现在正确引用 `.mem-sync/memories.jsonl`（REQ-005）
+- ~~`compact.js`/`summarize.js`/`review.js` 默认指向 `~/.memcli/default`~~ → ✅ 已修复（REQ-009）
+- ~~`src/git.js` shell-string 调用 + 硬编码 `origin/main`~~ → ✅ 已修复（REQ-006）
+- ~~`src/commands/import.js` 不存在~~ → ✅ 已修复（REQ-008）
+- ~~`encryption.test.js` 5 个失败~~ → ✅ 已修复，18/18 全绿（REQ-007）
 
 ---
 
