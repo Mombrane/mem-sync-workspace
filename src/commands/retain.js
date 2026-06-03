@@ -79,6 +79,11 @@ export async function retainCommand(args) {
   for (const candidate of candidates) {
     candidate.source.device = deviceId;
 
+    // Apply provenance fields from options to each candidate
+    if (options.author !== undefined) candidate.author = options.author;
+    if (options.session !== undefined) candidate.session = options.session;
+    candidate.device = deviceId;
+
     // Redaction check per candidate
     if (!options.skipRedaction) {
       const redactResult = redactContent(candidate.content);
@@ -155,6 +160,12 @@ export function parseRetainArgs(args) {
     } else if (arg === '--skip-redaction') {
       options.skipRedaction = true;
       index += 1;
+    } else if (arg === '--author') {
+      options.author = requireValue(args, index, '--author');
+      index += 2;
+    } else if (arg === '--session') {
+      options.session = requireValue(args, index, '--session');
+      index += 2;
     } else if (arg === '--llm-extract') {
       options.llmExtract = true;
       index += 1;

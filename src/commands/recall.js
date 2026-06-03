@@ -175,6 +175,18 @@ export function parseRecallArgs(args) {
     } else if (arg === '--veracity') {
       searchOptions.veracity = requireValue(args, index, '--veracity');
       index += 2;
+    } else if (arg === '--author') {
+      searchOptions.author = requireValue(args, index, '--author');
+      index += 2;
+    } else if (arg === '--device') {
+      searchOptions.device = requireValue(args, index, '--device');
+      index += 2;
+    } else if (arg === '--trust-tier') {
+      searchOptions.trustTier = requireValue(args, index, '--trust-tier');
+      index += 2;
+    } else if (arg === '--reviewer') {
+      searchOptions.reviewer = requireValue(args, index, '--reviewer');
+      index += 2;
     } else if (arg === '--mode') {
       searchOptions.mode = validateEnum(
         requireValue(args, index, '--mode'),

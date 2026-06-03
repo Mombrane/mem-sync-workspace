@@ -57,7 +57,15 @@ export function normalizeMemoryInput(input = {}) {
     validUntil: normalizeNullableTimestamp(input.validUntil, 'validUntil'),
     deletedAt: normalizeNullableTimestamp(input.deletedAt, 'deletedAt'),
     supersedes: normalizeArray(input.supersedes, 'supersedes'),
-    tags: normalizeArray(input.tags, 'tags')
+    tags: normalizeArray(input.tags, 'tags'),
+    // Provenance fields: optional, default null. Old records missing these fields
+    // pass validateMemory without error. They are filled by remember/retain/approve.
+    author: input.author ?? null,
+    device: input.device ?? null,
+    session: input.session ?? null,
+    reviewer: input.reviewer ?? null,
+    reviewedAt: normalizeNullableTimestamp(input.reviewedAt, 'reviewedAt'),
+    trustTier: input.trustTier ?? null
   };
 
   // canonicalKey 表达“语义去重”的边界；id 仍然是短标识符，二者职责分离。
@@ -211,6 +219,39 @@ function requireIsoTimestamp(value, field) {
 function requireNullableIsoTimestamp(value, field) {
   if (value === null) return;
   requireIsoTimestamp(value, field);
+}
+
+/**
+ * Compute the trust tier for a memory record based on reviewer status, source type, and confidence.
+ *
+ * Rules:
+ *   - 'high':     reviewer is set AND confidence >= 0.7
+ *   - 'medium':   reviewer is set OR (source.type === 'manual' AND confidence >= 0.5)
+ *   - 'low':      source.type in ['inferred', 'imported'] (no reviewer)
+ *   - 'untrusted': confidence < 0.3 AND no reviewer
+ *   - fallback:   'medium'
+ *
+ * @param {object} record - A validated memory record
+ * @returns {'high'|'medium'|'low'|'untrusted'} The computed trust tier
+ */
+export function computeTrustTier(record) {
+  const hasReviewer = record.reviewer != null && record.reviewer !== '';
+  const confidence = record.confidence ?? 0;
+  const sourceType = record.source?.type ?? 'manual';
+
+  if (hasReviewer && confidence >= 0.7) {
+    return 'high';
+  }
+  if (hasReviewer || (sourceType === 'manual' && confidence >= 0.5)) {
+    return 'medium';
+  }
+  if (sourceType === 'inferred' || sourceType === 'imported') {
+    return 'low';
+  }
+  if (confidence < 0.3) {
+    return 'untrusted';
+  }
+  return 'medium';
 }
 
 /**

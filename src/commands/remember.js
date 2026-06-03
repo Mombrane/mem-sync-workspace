@@ -107,6 +107,15 @@ export function parseRememberArgs(args) {
     } else if (arg === '--skip-redaction') {
       options.skipRedaction = true;
       index += 1;
+    } else if (arg === '--author') {
+      options.author = requireValue(args, index, '--author');
+      index += 2;
+    } else if (arg === '--device') {
+      options.device = requireValue(args, index, '--device');
+      index += 2;
+    } else if (arg === '--session') {
+      options.session = requireValue(args, index, '--session');
+      index += 2;
     } else if (arg.startsWith('--')) {
       // 未知标志：严格解析，立即报错
       throw new Error(`unknown option: ${arg}`);

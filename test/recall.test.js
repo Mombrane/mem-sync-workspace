@@ -41,6 +41,12 @@ function createTestDb(memories = [], embedRows = []) {
       valid_until TEXT,
       deleted_at TEXT,
       supersedes_json TEXT,
+      author TEXT,
+      session TEXT,
+      device TEXT,
+      reviewer TEXT,
+      reviewed_at TEXT,
+      trust_tier TEXT,
       file_path TEXT NOT NULL,
       line_no INTEGER NOT NULL,
       repo_commit TEXT NOT NULL

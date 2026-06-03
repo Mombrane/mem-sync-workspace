@@ -1,9 +1,17 @@
 import path from 'node:path';
 import { readPendingFiles, findAndRemoveFromPending, removeAllPending } from '../merge.js';
-import { normalizeMemoryInput } from '../schema.js';
+import { normalizeMemoryInput, computeTrustTier } from '../schema.js';
 import { appendJSONL } from '../repo-store.js';
 
 const DEFAULT_REPO = path.resolve(process.env.MEM_SYNC_HOME ?? '.mem-sync');
+
+/**
+ * Resolve reviewer identity from flag, env vars, or null.
+ * Priority: --reviewer flag > MEM_SYNC_REVIEWER > USER > null
+ */
+function resolveReviewer(flagValue) {
+  return flagValue ?? process.env.MEM_SYNC_REVIEWER ?? process.env.USER ?? null;
+}
 
 const PREVIEW_LENGTH = 120;
 
@@ -153,8 +161,15 @@ export async function approveCommand(args) {
     const records = readPendingFiles(pendingDir);
     const ids = [];
 
+    const reviewer = resolveReviewer(opts.reviewer);
+    const now = new Date().toISOString();
+
     for (const record of records) {
       const normalized = normalizeMemoryInput(record);
+      // Inject reviewer provenance
+      normalized.reviewer = reviewer;
+      normalized.reviewedAt = now;
+      normalized.trustTier = computeTrustTier(normalized);
       await appendJSONL(normalized, memoriesPath);
       ids.push(normalized.id);
     }
@@ -174,6 +189,10 @@ export async function approveCommand(args) {
   }
 
   const normalized = normalizeMemoryInput(result.record);
+  // Inject reviewer provenance
+  normalized.reviewer = resolveReviewer(opts.reviewer);
+  normalized.reviewedAt = new Date().toISOString();
+  normalized.trustTier = computeTrustTier(normalized);
   await appendJSONL(normalized, memoriesPath);
 
   console.log(JSON.stringify({ approved: opts.id }));
@@ -189,6 +208,7 @@ export function parseApproveArgs(args) {
   let id;
   let all = false;
   let repo = DEFAULT_REPO;
+  let reviewer;
 
   let index = 0;
   while (index < args.length) {
@@ -202,6 +222,13 @@ export function parseApproveArgs(args) {
         throw new Error('--repo requires a value.');
       }
       repo = raw;
+      index += 2;
+    } else if (arg === '--reviewer') {
+      const raw = args[index + 1];
+      if (raw === undefined) {
+        throw new Error('--reviewer requires a value.');
+      }
+      reviewer = raw;
       index += 2;
     } else if (arg.startsWith('--')) {
       throw new Error(`unknown option: ${arg}`);
@@ -217,7 +244,7 @@ export function parseApproveArgs(args) {
     );
   }
 
-  return { id, all, repo };
+  return { id, all, repo, reviewer };
 }
 
 /**
@@ -236,10 +263,16 @@ export function rejectCommand(args) {
   const opts = parseRejectArgs(args);
   const pendingDir = path.join(opts.repo, 'pending');
 
+  const reviewer = resolveReviewer(opts.reviewer);
+
   if (opts.all) {
     const removed = removeAllPending(pendingDir);
     console.log(
-      JSON.stringify({ rejected: removed.ids, count: removed.count })
+      JSON.stringify({
+        rejected: removed.ids,
+        count: removed.count,
+        ...(reviewer ? { reviewer } : {})
+      })
     );
     return;
   }
@@ -252,7 +285,10 @@ export function rejectCommand(args) {
     return;
   }
 
-  console.log(JSON.stringify({ rejected: opts.id }));
+  console.log(JSON.stringify({
+    rejected: opts.id,
+    ...(reviewer ? { reviewer } : {})
+  }));
 }
 
 /**
@@ -265,6 +301,7 @@ export function parseRejectArgs(args) {
   let id;
   let all = false;
   let repo = DEFAULT_REPO;
+  let reviewer;
 
   let index = 0;
   while (index < args.length) {
@@ -278,6 +315,13 @@ export function parseRejectArgs(args) {
         throw new Error('--repo requires a value.');
       }
       repo = raw;
+      index += 2;
+    } else if (arg === '--reviewer') {
+      const raw = args[index + 1];
+      if (raw === undefined) {
+        throw new Error('--reviewer requires a value.');
+      }
+      reviewer = raw;
       index += 2;
     } else if (arg.startsWith('--')) {
       throw new Error(`unknown option: ${arg}`);
@@ -293,5 +337,5 @@ export function parseRejectArgs(args) {
     );
   }
 
-  return { id, all, repo };
+  return { id, all, repo, reviewer };
 }

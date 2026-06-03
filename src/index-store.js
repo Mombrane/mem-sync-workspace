@@ -93,6 +93,12 @@ function mapRecordToRow(record, filePath, lineNo, repoCommit) {
     valid_until: record.validUntil,
     deleted_at: record.deletedAt,
     supersedes_json: JSON.stringify(record.supersedes),
+    author: record.author ?? null,
+    session: record.session ?? null,
+    device: record.device ?? null,
+    reviewer: record.reviewer ?? null,
+    reviewed_at: record.reviewedAt ?? null,
+    trust_tier: record.trustTier ?? null,
     file_path: filePath,
     line_no: lineNo,
     repo_commit: repoCommit
@@ -124,6 +130,12 @@ function mapRowToRecord(row) {
     validUntil: row.valid_until ?? null,
     deletedAt: row.deleted_at ?? null,
     supersedes: safeParseJSON(row.supersedes_json, []),
+    author: row.author ?? null,
+    session: row.session ?? null,
+    device: row.device ?? null,
+    reviewer: row.reviewer ?? null,
+    reviewedAt: row.reviewed_at ?? null,
+    trustTier: row.trust_tier ?? null,
     canonicalKey: null // 索引中不存储 canonicalKey，召回引擎可后续计算
   };
 }
@@ -218,6 +230,12 @@ export function createIndexDatabase(cacheDir) {
       valid_until TEXT,
       deleted_at TEXT,
       supersedes_json TEXT,
+      author TEXT,
+      session TEXT,
+      device TEXT,
+      reviewer TEXT,
+      reviewed_at TEXT,
+      trust_tier TEXT,
       file_path TEXT NOT NULL,
       line_no INTEGER NOT NULL,
       repo_commit TEXT NOT NULL
@@ -318,12 +336,14 @@ export function rebuildIndex(repoDir, cacheDir, options = {}) {
       content, summary, source_json, evidence_json,
       confidence, importance, veracity, tags_json,
       created_at, updated_at, valid_until, deleted_at, supersedes_json,
+      author, session, device, reviewer, reviewed_at, trust_tier,
       file_path, line_no, repo_commit
     ) VALUES (
       @id, @kind, @scope, @project_id, @agent_id,
       @content, @summary, @source_json, @evidence_json,
       @confidence, @importance, @veracity, @tags_json,
       @created_at, @updated_at, @valid_until, @deleted_at, @supersedes_json,
+      @author, @session, @device, @reviewer, @reviewed_at, @trust_tier,
       @file_path, @line_no, @repo_commit
     );
   `);
@@ -794,6 +814,10 @@ export function searchIndex(cacheDir, optionsOrQuery, legacyLimit) {
     minConfidence,
     minImportance,
     veracity,
+    author,
+    device,
+    trustTier,
+    reviewer,
     excludeDeleted,
     excludeExpired,
     mmr,
@@ -860,6 +884,10 @@ export function searchIndex(cacheDir, optionsOrQuery, legacyLimit) {
         AND (@veracity IS NULL OR m.veracity = @veracity)
         AND m.confidence >= @minConfidence
         AND m.importance >= @minImportance
+        AND (@author IS NULL OR m.author = @author)
+        AND (@device IS NULL OR m.device = @device)
+        AND (@trustTier IS NULL OR m.trust_tier = @trustTier)
+        AND (@reviewer IS NULL OR m.reviewer = @reviewer)
         ${excludeDeletedClause}
         ${excludeExpiredClause}
       ORDER BY rank
@@ -873,6 +901,10 @@ export function searchIndex(cacheDir, optionsOrQuery, legacyLimit) {
       veracity: veracity ?? null,
       minConfidence: minConfidence ?? 0,
       minImportance: minImportance ?? 0,
+      author: author ?? null,
+      device: device ?? null,
+      trustTier: trustTier ?? null,
+      reviewer: reviewer ?? null,
       nowIso,
       effectiveLimit
     });

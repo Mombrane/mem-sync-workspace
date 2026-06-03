@@ -57,7 +57,13 @@ function makeRecord(overrides = {}) {
     updatedAt: overrides.updatedAt ?? '2026-06-01T10:00:00.000Z',
     validUntil: overrides.validUntil ?? null,
     deletedAt: overrides.deletedAt ?? null,
-    supersedes: overrides.supersedes ?? []
+    supersedes: overrides.supersedes ?? [],
+    author: overrides.author ?? null,
+    session: overrides.session ?? null,
+    device: overrides.device ?? null,
+    reviewer: overrides.reviewer ?? null,
+    reviewedAt: overrides.reviewedAt ?? null,
+    trustTier: overrides.trustTier ?? null
   };
 }
 
@@ -997,6 +1003,199 @@ test('searchIndexHybrid with no embeddings falls back to FTS-only', async () => 
 
     // Results should still have _rank from FTS but may or may not have _hybridScore
     assert.ok(typeof results[0]._rank === 'number', 'should have _rank from FTS');
+  } finally {
+    await rm(repoDir, { recursive: true, force: true });
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+// ─── REQ-013: Provenance filtering ───────────────────────────────────
+
+test('rebuildIndex stores and retrieves provenance fields', async () => {
+  const repoDir = await tempDir('prov-store');
+  const cacheDir = await tempDir('prov-store-cache');
+
+  try {
+    const records = [
+      makeRecord({
+        id: 'mem_prov1',
+        content: 'provenance test memory one',
+        author: 'huguangyao',
+        device: 'macbook',
+        session: 'sess_abc',
+        reviewer: 'alice',
+        reviewedAt: '2026-06-02T10:00:00.000Z',
+        trustTier: 'high'
+      })
+    ];
+    await writeJSONLFile(repoDir, 'memories.jsonl', records);
+    rebuildIndex(repoDir, cacheDir, { repoHead: 'prov-test' });
+
+    const results = searchIndex(cacheDir, { query: 'provenance test', limit: 10 });
+    assert.equal(results.length, 1);
+    assert.equal(results[0].author, 'huguangyao');
+    assert.equal(results[0].device, 'macbook');
+    assert.equal(results[0].session, 'sess_abc');
+    assert.equal(results[0].reviewer, 'alice');
+    assert.equal(results[0].reviewedAt, '2026-06-02T10:00:00.000Z');
+    assert.equal(results[0].trustTier, 'high');
+  } finally {
+    await rm(repoDir, { recursive: true, force: true });
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test('rebuildIndex defaults provenance fields to null when missing', async () => {
+  const repoDir = await tempDir('prov-null');
+  const cacheDir = await tempDir('prov-null-cache');
+
+  try {
+    // Record without any provenance fields
+    const records = [
+      makeRecord({ id: 'mem_noprov', content: 'no provenance fields here' })
+    ];
+    await writeJSONLFile(repoDir, 'memories.jsonl', records);
+    rebuildIndex(repoDir, cacheDir, { repoHead: 'prov-null-test' });
+
+    const results = searchIndex(cacheDir, { query: 'provenance fields', limit: 10 });
+    assert.equal(results.length, 1);
+    assert.equal(results[0].author, null);
+    assert.equal(results[0].device, null);
+    assert.equal(results[0].session, null);
+    assert.equal(results[0].reviewer, null);
+    assert.equal(results[0].reviewedAt, null);
+    assert.equal(results[0].trustTier, null);
+  } finally {
+    await rm(repoDir, { recursive: true, force: true });
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test('searchIndex filters by author', async () => {
+  const repoDir = await tempDir('prov-filter-author');
+  const cacheDir = await tempDir('prov-filter-author-cache');
+
+  try {
+    const records = [
+      makeRecord({ id: 'mem_alice', content: 'shared content by alice', author: 'alice' }),
+      makeRecord({ id: 'mem_bob', content: 'shared content by bob', author: 'bob' })
+    ];
+    await writeJSONLFile(repoDir, 'memories.jsonl', records);
+    rebuildIndex(repoDir, cacheDir, { repoHead: 'prov-author-test' });
+
+    const results = searchIndex(cacheDir, { query: 'shared content', author: 'alice', limit: 10 });
+    assert.equal(results.length, 1);
+    assert.equal(results[0].id, 'mem_alice');
+
+    const results2 = searchIndex(cacheDir, { query: 'shared content', limit: 10 });
+    assert.equal(results2.length, 2, 'without author filter, both should appear');
+  } finally {
+    await rm(repoDir, { recursive: true, force: true });
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test('searchIndex filters by device', async () => {
+  const repoDir = await tempDir('prov-filter-device');
+  const cacheDir = await tempDir('prov-filter-device-cache');
+
+  try {
+    const records = [
+      makeRecord({ id: 'mem_mac', content: 'shared keyword data', device: 'macbook' }),
+      makeRecord({ id: 'mem_linux', content: 'shared keyword data', device: 'linux-server' })
+    ];
+    await writeJSONLFile(repoDir, 'memories.jsonl', records);
+    rebuildIndex(repoDir, cacheDir, { repoHead: 'prov-device-test' });
+
+    const results = searchIndex(cacheDir, { query: 'shared keyword', device: 'macbook', limit: 10 });
+    assert.equal(results.length, 1);
+    assert.equal(results[0].id, 'mem_mac');
+  } finally {
+    await rm(repoDir, { recursive: true, force: true });
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test('searchIndex filters by trustTier', async () => {
+  const repoDir = await tempDir('prov-filter-trust');
+  const cacheDir = await tempDir('prov-filter-trust-cache');
+
+  try {
+    const records = [
+      makeRecord({ id: 'mem_high', content: 'trusted memory content', trustTier: 'high' }),
+      makeRecord({ id: 'mem_low', content: 'low trust memory content', trustTier: 'low' })
+    ];
+    await writeJSONLFile(repoDir, 'memories.jsonl', records);
+    rebuildIndex(repoDir, cacheDir, { repoHead: 'prov-trust-test' });
+
+    const results = searchIndex(cacheDir, { query: 'memory content', trustTier: 'high', limit: 10 });
+    assert.equal(results.length, 1);
+    assert.equal(results[0].id, 'mem_high');
+  } finally {
+    await rm(repoDir, { recursive: true, force: true });
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test('searchIndex filters by reviewer', async () => {
+  const repoDir = await tempDir('prov-filter-reviewer');
+  const cacheDir = await tempDir('prov-filter-reviewer-cache');
+
+  try {
+    const records = [
+      makeRecord({ id: 'mem_rev_alice', content: 'reviewed memory one', reviewer: 'alice' }),
+      makeRecord({ id: 'mem_rev_bob', content: 'reviewed memory two', reviewer: 'bob' }),
+      makeRecord({ id: 'mem_unreviewed', content: 'unreviewed memory three' })
+    ];
+    await writeJSONLFile(repoDir, 'memories.jsonl', records);
+    rebuildIndex(repoDir, cacheDir, { repoHead: 'prov-reviewer-test' });
+
+    const results = searchIndex(cacheDir, { query: 'reviewed memory', reviewer: 'alice', limit: 10 });
+    assert.equal(results.length, 1);
+    assert.equal(results[0].id, 'mem_rev_alice');
+  } finally {
+    await rm(repoDir, { recursive: true, force: true });
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test('searchIndex combines provenance filters with existing filters', async () => {
+  const repoDir = await tempDir('prov-combined');
+  const cacheDir = await tempDir('prov-combined-cache');
+
+  try {
+    const records = [
+      makeRecord({
+        id: 'mem_target',
+        content: 'specific memory target content',
+        kind: 'project_fact',
+        scope: 'project',
+        author: 'alice',
+        trustTier: 'high',
+        confidence: 0.9
+      }),
+      makeRecord({
+        id: 'mem_same_author_diff_kind',
+        content: 'specific memory other kind',
+        kind: 'episode',
+        scope: 'global',
+        author: 'alice',
+        trustTier: 'high',
+        confidence: 0.9
+      })
+    ];
+    await writeJSONLFile(repoDir, 'memories.jsonl', records);
+    rebuildIndex(repoDir, cacheDir, { repoHead: 'prov-combined-test' });
+
+    const results = searchIndex(cacheDir, {
+      query: 'specific memory',
+      author: 'alice',
+      trustTier: 'high',
+      kind: 'project_fact',
+      limit: 10
+    });
+    assert.equal(results.length, 1);
+    assert.equal(results[0].id, 'mem_target');
   } finally {
     await rm(repoDir, { recursive: true, force: true });
     await rm(cacheDir, { recursive: true, force: true });

@@ -4,7 +4,8 @@ import {
   createCanonicalKey,
   normalizeContent,
   normalizeMemoryInput,
-  validateMemory
+  validateMemory,
+  computeTrustTier
 } from '../src/schema.js';
 
 test('normalizeMemoryInput creates schema v1 memory defaults', () => {
@@ -151,6 +152,142 @@ test('normalizeMemoryInput applies defaults for non-manual source through public
 
   assert.equal(memory.confidence, 0.5);
   assert.equal(memory.veracity, 'unknown');
+});
+
+// ─── REQ-013: Provenance fields ──────────────────────────────────────
+
+test('provenance fields default to null when not provided', () => {
+  const memory = normalizeMemoryInput({
+    content: 'test content',
+    now: new Date('2026-06-01T10:00:00.000Z')
+  });
+
+  assert.equal(memory.author, null);
+  assert.equal(memory.device, null);
+  assert.equal(memory.session, null);
+  assert.equal(memory.reviewer, null);
+  assert.equal(memory.reviewedAt, null);
+  assert.equal(memory.trustTier, null);
+});
+
+test('provenance fields are preserved when explicitly provided', () => {
+  const memory = normalizeMemoryInput({
+    content: 'test content',
+    author: 'huguangyao',
+    device: 'macbook-pro',
+    session: 'sess_abc123',
+    reviewer: 'reviewer1',
+    reviewedAt: '2026-06-02T10:00:00.000Z',
+    trustTier: 'high',
+    now: new Date('2026-06-01T10:00:00.000Z')
+  });
+
+  assert.equal(memory.author, 'huguangyao');
+  assert.equal(memory.device, 'macbook-pro');
+  assert.equal(memory.session, 'sess_abc123');
+  assert.equal(memory.reviewer, 'reviewer1');
+  assert.equal(memory.reviewedAt, '2026-06-02T10:00:00.000Z');
+  assert.equal(memory.trustTier, 'high');
+});
+
+test('validateMemory accepts old records without provenance fields', () => {
+  // Old record missing provenance fields should still pass validation
+  const oldRecord = {
+    schemaVersion: 1,
+    id: 'mem_oldrecord',
+    canonicalKey: 'episode:global:::oldrecord',
+    kind: 'episode',
+    scope: 'global',
+    content: 'old content',
+    summary: 'old summary',
+    source: { type: 'manual' },
+    evidence: [],
+    confidence: 1,
+    veracity: 'stated',
+    importance: 0.5,
+    createdAt: '2026-06-01T10:00:00.000Z',
+    updatedAt: '2026-06-01T10:00:00.000Z',
+    validUntil: null,
+    deletedAt: null,
+    supersedes: [],
+    tags: []
+    // No author, device, session, reviewer, reviewedAt, trustTier
+  };
+
+  assert.doesNotThrow(() => validateMemory(oldRecord));
+});
+
+test('validateMemory accepts records with provenance fields', () => {
+  const record = {
+    schemaVersion: 1,
+    id: 'mem_newrecord',
+    canonicalKey: 'episode:global:::newrecord',
+    kind: 'episode',
+    scope: 'global',
+    content: 'new content',
+    summary: 'new summary',
+    source: { type: 'manual' },
+    evidence: [],
+    confidence: 1,
+    veracity: 'stated',
+    importance: 0.5,
+    createdAt: '2026-06-01T10:00:00.000Z',
+    updatedAt: '2026-06-01T10:00:00.000Z',
+    validUntil: null,
+    deletedAt: null,
+    supersedes: [],
+    tags: [],
+    author: 'huguangyao',
+    device: 'laptop',
+    session: 'sess_1',
+    reviewer: 'reviewer1',
+    reviewedAt: '2026-06-02T10:00:00.000Z',
+    trustTier: 'high'
+  };
+
+  assert.doesNotThrow(() => validateMemory(record));
+});
+
+// ─── computeTrustTier ───────────────────────────────────────────────
+
+test('computeTrustTier returns high when reviewer present and confidence >= 0.7', () => {
+  const record = { reviewer: 'alice', confidence: 0.8, source: { type: 'manual' } };
+  assert.equal(computeTrustTier(record), 'high');
+});
+
+test('computeTrustTier returns medium when reviewer present but confidence < 0.7', () => {
+  const record = { reviewer: 'alice', confidence: 0.5, source: { type: 'manual' } };
+  assert.equal(computeTrustTier(record), 'medium');
+});
+
+test('computeTrustTier returns medium when source is manual with confidence >= 0.5 (no reviewer)', () => {
+  const record = { reviewer: null, confidence: 0.6, source: { type: 'manual' } };
+  assert.equal(computeTrustTier(record), 'medium');
+});
+
+test('computeTrustTier returns low when source is inferred (no reviewer)', () => {
+  const record = { reviewer: null, confidence: 0.8, source: { type: 'inferred' } };
+  assert.equal(computeTrustTier(record), 'low');
+});
+
+test('computeTrustTier returns low when source is imported (no reviewer)', () => {
+  const record = { reviewer: null, confidence: 0.9, source: { type: 'imported' } };
+  assert.equal(computeTrustTier(record), 'low');
+});
+
+test('computeTrustTier returns untrusted when confidence < 0.3 and no reviewer', () => {
+  const record = { reviewer: null, confidence: 0.1, source: { type: 'manual' } };
+  assert.equal(computeTrustTier(record), 'untrusted');
+});
+
+test('computeTrustTier returns medium for manual source with confidence < 0.5, no reviewer', () => {
+  const record = { reviewer: null, confidence: 0.4, source: { type: 'manual' } };
+  assert.equal(computeTrustTier(record), 'medium');
+});
+
+test('computeTrustTier handles empty string reviewer as no reviewer', () => {
+  const record = { reviewer: '', confidence: 0.8, source: { type: 'manual' } };
+  assert.equal(computeTrustTier(record), 'medium');
 });
 
 test('normalizeMemoryInput rejects invalid timestamp fields with field names', () => {
