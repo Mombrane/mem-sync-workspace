@@ -33,7 +33,7 @@
 ---
 
 ## 🔎 代码审计发现（2026-06-03，已大部分修复）
-- ~~`README.md` 仍使用 `node ./src/cli.js add ...`~~ → ✅ 已修复（REQ-005）
+- ~~`README.md` 仍使用 `node ./src/cli.js add ...`~~ → ✅ 已修复（REQ-005 部分修复 + 2026-06-04 维护补全，9 处 `node ./src/cli.js` → `npx mem-sync`）
 - ~~`README.md` 仍声称 `.memcli/memories.json`~~ → ✅ 已修复，现在正确引用 `.mem-sync/memories.jsonl`（REQ-005）
 - ~~`compact.js`/`summarize.js`/`review.js` 默认指向 `~/.memcli/default`~~ → ✅ 已修复（REQ-009）
 - ~~`src/git.js` shell-string 调用 + 硬编码 `origin/main`~~ → ✅ 已修复（REQ-006）

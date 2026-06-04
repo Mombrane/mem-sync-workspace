@@ -13,11 +13,11 @@
 
 ```bash
 npm test
-node ./src/cli.js remember "User prefers concise Chinese replies" --scope assistant --source codex
-node ./src/cli.js list
-node ./src/cli.js export
-node ./src/cli.js index rebuild
-node ./src/cli.js index status --format json
+npx mem-sync remember "User prefers concise Chinese replies" --scope assistant --source codex
+npx mem-sync list
+npx mem-sync export
+npx mem-sync index rebuild
+npx mem-sync index status --format json
 ```
 
 By default, local data is written to `.mem-sync/memories.jsonl` in the current working directory. Set `MEM_SYNC_HOME` to use a different directory.
@@ -30,22 +30,22 @@ New memories are normalized as Memory Schema v1 records. The `add` command emits
 
 ```bash
 # Build or rebuild the FTS index from JSONL source files
-node ./src/cli.js index rebuild
+npx mem-sync index rebuild
 # Output: {"indexed":42}
 
 # Check index status (human-readable)
-node ./src/cli.js index status
+npx mem-sync index status
 # Index: exists
 #   Record count: 42
 #   Repo HEAD:    abc123def
 #   DB path:      .mem-sync/.cache/index.sqlite
 
 # Check index status (JSON)
-node ./src/cli.js index status --format json
+npx mem-sync index status --format json
 # Output: {"recordCount":42,"repoHead":"abc123def","dbPath":"...","exists":true}
 
 # Incremental update — skips if repo HEAD unchanged
-node ./src/cli.js index update
+npx mem-sync index update
 # Output: {"skipped":true} or {"rebuilt":true,"recordCount":42}
 ```
 
