@@ -263,19 +263,121 @@ test('decryptLine with wrong config throws error', async () => {
   }
 });
 
-test('encryptLine throws for password mode (not implemented)', async () => {
+// ---------------------------------------------------------------------------
+// password mode tests (age-encryption JS library, no age binary needed)
+// ---------------------------------------------------------------------------
+
+test('encryptLine + decryptLine roundtrip with password mode', async () => {
+  process.env.MEM_SYNC_PASSWORD = 'test-password-123';
+  try {
+    const config = { mode: 'password' };
+    const plaintext = '{"type":"memory","content":"secret data"}';
+    const encrypted = await encryptLine(plaintext, config);
+
+    // 加密后的内容应包含 age 头部
+    assert.ok(isEncrypted(encrypted));
+    assert.notEqual(encrypted, plaintext);
+
+    // 解密后应与原文一致
+    const decrypted = await decryptLine(encrypted, config);
+    assert.equal(decrypted, plaintext);
+  } finally {
+    delete process.env.MEM_SYNC_PASSWORD;
+  }
+});
+
+test('encryptLine + decryptLine roundtrip with password mode and Chinese text', async () => {
+  process.env.MEM_SYNC_PASSWORD = 'test-password-456';
+  try {
+    const config = { mode: 'password' };
+    const plaintext = '{"type":"memory","content":"你好世界 🌍"}';
+    const encrypted = await encryptLine(plaintext, config);
+    const decrypted = await decryptLine(encrypted, config);
+    assert.equal(decrypted, plaintext);
+  } finally {
+    delete process.env.MEM_SYNC_PASSWORD;
+  }
+});
+
+test('encryptLine password mode throws when MEM_SYNC_PASSWORD is missing', async () => {
+  delete process.env.MEM_SYNC_PASSWORD;
   await assert.rejects(
     () => encryptLine('data', { mode: 'password' }),
-    /password mode not yet implemented in encryptLine/
+    /MEM_SYNC_PASSWORD/
   );
 });
 
-test('decryptLine throws for password mode (not implemented)', async () => {
+test('decryptLine password mode throws when MEM_SYNC_PASSWORD is missing', async () => {
+  delete process.env.MEM_SYNC_PASSWORD;
   await assert.rejects(
     () => decryptLine('data', { mode: 'password' }),
-    /password mode not yet implemented in decryptLine/
+    /MEM_SYNC_PASSWORD/
   );
 });
+
+test('decryptLine password mode throws with wrong password', async () => {
+  process.env.MEM_SYNC_PASSWORD = 'correct-password';
+  let encrypted;
+  try {
+    encrypted = await encryptLine('secret data', { mode: 'password' });
+  } finally {
+    delete process.env.MEM_SYNC_PASSWORD;
+  }
+
+  process.env.MEM_SYNC_PASSWORD = 'wrong-password';
+  try {
+    await assert.rejects(
+      () => decryptLine(encrypted, { mode: 'password' }),
+      /no identity/
+    );
+  } finally {
+    delete process.env.MEM_SYNC_PASSWORD;
+  }
+});
+
+test('decryptLineSync password mode roundtrip', async () => {
+  process.env.MEM_SYNC_PASSWORD = 'sync-test-password';
+  try {
+    const plaintext = '{"type":"memory","content":"sync decrypt test"}';
+    const encrypted = await encryptLine(plaintext, { mode: 'password' });
+    const decrypted = decryptLineSync(encrypted, { mode: 'password' });
+    assert.equal(decrypted, plaintext);
+  } finally {
+    delete process.env.MEM_SYNC_PASSWORD;
+  }
+});
+
+test('decryptLineSync password mode throws when MEM_SYNC_PASSWORD is missing', () => {
+  delete process.env.MEM_SYNC_PASSWORD;
+  assert.throws(
+    () => decryptLineSync('data', { mode: 'password' }),
+    /MEM_SYNC_PASSWORD/
+  );
+});
+
+test('decryptLineSync password mode throws with wrong password', async () => {
+  process.env.MEM_SYNC_PASSWORD = 'correct-password';
+  let encrypted;
+  try {
+    encrypted = await encryptLine('secret data', { mode: 'password' });
+  } finally {
+    delete process.env.MEM_SYNC_PASSWORD;
+  }
+
+  process.env.MEM_SYNC_PASSWORD = 'wrong-password';
+  try {
+    assert.throws(
+      () => decryptLineSync(encrypted, { mode: 'password' }),
+      /no identity/
+    );
+  } finally {
+    delete process.env.MEM_SYNC_PASSWORD;
+  }
+});
+
+// ---------------------------------------------------------------------------
+// REQ-018: 错误优先级测试 — 模式验证应先于二进制检查 (unknown mode)
+// ---------------------------------------------------------------------------
 
 test('encryptLine throws for unknown mode', async () => {
   await assert.rejects(
@@ -288,31 +390,6 @@ test('decryptLine throws for unknown mode', async () => {
   await assert.rejects(
     () => decryptLine('data', { mode: 'unknown' }),
     /unsupported encryption mode: unknown/
-  );
-});
-
-// ---------------------------------------------------------------------------
-// REQ-018: 错误优先级测试 — 模式验证应先于二进制检查
-// ---------------------------------------------------------------------------
-
-test('encryptLine mode validation occurs before binary check', async () => {
-  await assert.rejects(
-    () => encryptLine('data', { mode: 'password' }),
-    /password mode not yet implemented/
-  );
-});
-
-test('decryptLine mode validation occurs before binary check', async () => {
-  await assert.rejects(
-    () => decryptLine('data', { mode: 'password' }),
-    /password mode not yet implemented/
-  );
-});
-
-test('decryptLineSync mode validation occurs before binary check', () => {
-  assert.throws(
-    () => decryptLineSync('data', { mode: 'password' }),
-    /password mode not yet implemented/
   );
 });
 
@@ -334,12 +411,5 @@ test('decryptLineSync unknown mode validation occurs before binary check', () =>
   assert.throws(
     () => decryptLineSync('data', { mode: 'unknown' }),
     /unsupported encryption mode: unknown/
-  );
-});
-
-test('decryptLineSync throws for password mode (not implemented)', () => {
-  assert.throws(
-    () => decryptLineSync('data', { mode: 'password' }),
-    /password mode not yet implemented in decryptLineSync/
   );
 });

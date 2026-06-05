@@ -3,6 +3,7 @@ import { access, readFile, chmod } from 'node:fs/promises';
 import { constants, accessSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
+import { Encrypter, Decrypter, armor } from 'age-encryption';
 
 /** age 加密文件的头部特征字符串，用于识别加密内容 */
 const AGE_HEADER_PREFIX = 'age-encryption.org/v1';
@@ -113,6 +114,21 @@ async function getAgeBinary() {
 async function getAgeKeygenBinary() {
   const resolved = await resolveBinary(AGE_KEYGEN_CANDIDATES);
   return resolved ? resolved.path : null;
+}
+
+/**
+ * 从环境变量 MEM_SYNC_PASSWORD 获取密码。
+ * 如果未设置该环境变量，抛出错误。
+ *
+ * @returns {string} 密码字符串
+ * @throws {Error} MEM_SYNC_PASSWORD 未设置时抛出
+ */
+function getPasswordFromEnv() {
+  const password = process.env.MEM_SYNC_PASSWORD;
+  if (!password) {
+    throw new Error('MEM_SYNC_PASSWORD environment variable is required for password mode encryption');
+  }
+  return password;
 }
 
 /**
@@ -290,7 +306,11 @@ export async function generateKeypair(keyPath) {
 export async function encryptLine(plaintext, config) {
   // Validate mode FIRST — before checking for age binary
   if (config.mode === 'password') {
-    throw new Error('password mode not yet implemented in encryptLine');
+    const password = getPasswordFromEnv();
+    const enc = new Encrypter();
+    enc.setPassphrase(password);
+    const ciphertext = await enc.encrypt(plaintext);
+    return armor.encode(ciphertext);
   }
   if (config.mode !== 'age') {
     throw new Error(`unsupported encryption mode: ${config.mode}`);
@@ -329,7 +349,12 @@ export async function encryptLine(plaintext, config) {
 export async function decryptLine(ciphertext, config) {
   // Validate mode FIRST — before checking for age binary
   if (config.mode === 'password') {
-    throw new Error('password mode not yet implemented in decryptLine');
+    const password = getPasswordFromEnv();
+    const dec = new Decrypter();
+    dec.addPassphrase(password);
+    const ciphertextBinary = armor.decode(ciphertext);
+    const plaintext = await dec.decrypt(ciphertextBinary, 'text');
+    return plaintext;
   }
   if (config.mode !== 'age') {
     throw new Error(`unsupported encryption mode: ${config.mode}`);
@@ -362,7 +387,27 @@ export async function decryptLine(ciphertext, config) {
 export function decryptLineSync(ciphertext, config) {
   // Validate mode FIRST — before checking for age binary
   if (config.mode === 'password') {
-    throw new Error('password mode not yet implemented in decryptLineSync');
+    const password = getPasswordFromEnv();
+    // age-encryption JS lib is async, so we spawn a Node subprocess for sync operation
+    const script = `
+      import { Decrypter, armor } from 'age-encryption';
+      const chunks = [];
+      process.stdin.on('data', c => chunks.push(c));
+      process.stdin.on('end', async () => {
+        const armored = Buffer.concat(chunks).toString('utf8');
+        const ciphertext = armor.decode(armored);
+        const dec = new Decrypter();
+        dec.addPassphrase(process.env.MEM_SYNC_PASSWORD);
+        const plaintext = await dec.decrypt(ciphertext, 'text');
+        process.stdout.write(plaintext);
+      });
+    `;
+    return execFileSync('node', ['--input-type=module', '-e', script], {
+      input: ciphertext,
+      encoding: 'utf8',
+      maxBuffer: 10 * 1024 * 1024,
+      env: { ...process.env, MEM_SYNC_PASSWORD: password }
+    });
   }
   if (config.mode !== 'age') {
     throw new Error(`unsupported encryption mode: ${config.mode}`);

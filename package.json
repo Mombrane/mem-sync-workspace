@@ -15,6 +15,7 @@
   },
   "license": "MIT",
   "dependencies": {
+    "age-encryption": "^0.3.0",
     "better-sqlite3": "^12.10.0"
   }
 }
