@@ -178,6 +178,7 @@ test('slugifies tag names for directories and title-cases for markdown', async (
 test('caps steps at MAX_STEPS (10)', async () => {
   const tmp = makeTmpDir();
   const globalFile = path.join(tmp, 'memories', 'working', 'global.jsonl');
+  const fixedTime = new Date().toISOString();
   const memories = [];
   for (let i = 1; i <= 15; i++) {
     memories.push(makeMemory({
@@ -185,7 +186,9 @@ test('caps steps at MAX_STEPS (10)', async () => {
       tags: ['process'],
       content: `Step ${i}: Do something ${i}`,
       confidence: 0.9,
-      importance: 0.8
+      importance: 0.8,
+      createdAt: fixedTime,
+      updatedAt: fixedTime
     }));
   }
   writeJSONLSync(globalFile, memories);

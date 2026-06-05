@@ -85,10 +85,10 @@ function renderSkillMarkdown(clusterName, cluster, now) {
   const corrections = cluster.filter(m => m.kind === 'correction');
   const warnings = cluster.filter(m => m.kind === 'warning');
 
-  // Sort workflows by score descending, cap at MAX_STEPS
+  // Sort workflows by score descending (tiebreak: most recent first), cap at MAX_STEPS
   const sortedWorkflows = workflows
     .map(m => ({ memory: m, score: computeScore(m) }))
-    .sort((a, b) => b.score - a.score)
+    .sort((a, b) => b.score - a.score || new Date(b.memory.updatedAt) - new Date(a.memory.updatedAt))
     .slice(0, MAX_STEPS);
 
   const slug = slugify(clusterName);
