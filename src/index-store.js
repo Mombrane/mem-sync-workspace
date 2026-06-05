@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { execSync } from 'node:child_process';
+import { execSync, spawnSync } from 'node:child_process';
 import { getQualityMultiplier, validateMemory } from './schema.js';
 import { isEncrypted, decryptLineSync, loadEncryptionConfigSync } from './encryption.js';
 import {
@@ -1019,14 +1019,231 @@ export function searchIndex(cacheDir, optionsOrQuery, legacyLimit) {
 }
 
 /**
- * 增量索引更新：检查 repo_head 是否变化，如有变化则重建。
+ * 辅助函数：使用 git diff 获取两个提交之间变更的文件列表。
+ * 返回相对于 repoDir 的相对路径数组。
+ * 如果 git diff 执行失败，抛出异常（调用方负责捕获并回退到全量重建）。
  *
- * 当前实现为简化版本：如果存储的 repo_head 与当前 HEAD 匹配，
- * 则跳过（返回 { skipped: true }）；否则执行全量重建。
+ * @param {string} oldHead - 旧 HEAD 提交哈希
+ * @param {string} newHead - 新 HEAD 提交哈希
+ * @param {string} repoDir - Git 仓库目录
+ * @returns {string[]} 变更文件的相对路径数组
+ */
+function gitDiffFiles(oldHead, newHead, repoDir) {
+  const result = spawnSync('git', ['diff', '--name-only', oldHead, newHead], {
+    cwd: repoDir,
+    encoding: 'utf8',
+    stdio: ['pipe', 'pipe', 'pipe']
+  });
+  if (result.status !== 0) {
+    throw new Error(result.stderr || 'git diff failed');
+  }
+  return result.stdout.trim().split('\n').filter(Boolean);
+}
+
+/**
+ * 辅助函数：从单个 JSONL 文件提取索引行记录。
+ * 复用 rebuildIndex 中的 JSON 解析、Schema 验证、加密解密、软删除/过期跳过逻辑。
  *
- * 这是 MVP 阶段的务实选择——在数百条记录的规模下，
- * 全量重建耗时不到一秒，增量 diff 的复杂性不值得。
- * 未来规模增长后可以在不改变 API 的情况下实现真正的增量更新。
+ * @param {string} filePath - JSONL 文件的绝对路径
+ * @param {string} repoCommit - 当前 HEAD 提交哈希
+ * @param {function} [logger] - 诊断日志回调
+ * @returns {object[]} 数据库行参数数组（可直接用于 INSERT）
+ */
+function indexFileToRows(filePath, repoCommit, logger) {
+  let raw;
+  try {
+    raw = readFileSync(filePath, 'utf8');
+  } catch {
+    logger?.(`[mem-sync:index] update:skip cannot read file: ${filePath}`);
+    return [];
+  }
+
+  const lines = splitLines(raw);
+  const rows = [];
+
+  // 加载加密配置（懒加载，每文件只加载一次）
+  let encConfig = null;
+  let encConfigLoaded = false;
+  function getEncConfig() {
+    if (!encConfigLoaded) {
+      encConfigLoaded = true;
+      const parts = filePath.split('/');
+      const memoriesIdx = parts.lastIndexOf('memories');
+      if (memoriesIdx > 0) {
+        const repoPath = parts.slice(0, memoriesIdx).join('/');
+        encConfig = loadEncryptionConfigSync(repoPath);
+      }
+    }
+    return encConfig;
+  }
+
+  for (let lineIdx = 0; lineIdx < lines.length; lineIdx += 1) {
+    let line = lines[lineIdx];
+
+    // 解密（如果行是加密的）
+    if (isEncrypted(line)) {
+      const cfg = getEncConfig();
+      if (cfg) {
+        try {
+          if (line.trim().startsWith('-----BEGIN AGE ENCRYPTED FILE-----')) {
+            let block = line;
+            while (lineIdx + 1 < lines.length) {
+              lineIdx += 1;
+              block += '\n' + lines[lineIdx];
+              if (lines[lineIdx].trim().startsWith('-----END AGE ENCRYPTED FILE-----')) break;
+            }
+            line = decryptLineSync(block, cfg);
+          } else {
+            line = decryptLineSync(line, cfg);
+          }
+        } catch (err) {
+          logger?.(`[mem-sync:index] update:skip decrypt failed at ${filePath}:${lineIdx + 1}: ${err.message}`);
+          continue;
+        }
+      } else {
+        logger?.(`[mem-sync:index] update:skip encrypted line without config at ${filePath}:${lineIdx + 1}`);
+        continue;
+      }
+    }
+
+    // JSON 解析
+    let record;
+    try {
+      record = JSON.parse(line);
+    } catch {
+      logger?.(`[mem-sync:index] update:skip invalid JSON at ${filePath}:${lineIdx + 1}`);
+      continue;
+    }
+
+    // Schema 验证
+    try {
+      validateMemory(record);
+    } catch (err) {
+      logger?.(`[mem-sync:index] update:skip validation failed at ${filePath}:${lineIdx + 1}: ${err.message}`);
+      continue;
+    }
+
+    // 跳过已删除或已过期的记录
+    if (shouldSkipRecord(record)) {
+      continue;
+    }
+
+    rows.push(mapRecordToRow(record, filePath, lineIdx + 1, repoCommit));
+  }
+
+  return rows;
+}
+
+/**
+ * 辅助函数：增量更新核心逻辑。
+ * 对变更的 JSONL 文件执行 DELETE 旧记录 + INSERT 新记录，
+ * 最后重建 FTS 索引并更新 repo_head。
+ *
+ * @param {string} repoDir - JSONL 源数据目录
+ * @param {string} cacheDir - 索引数据库缓存目录
+ * @param {string[]} changedFiles - 变更文件的相对路径数组（已过滤为 .jsonl）
+ * @param {string} newHead - 新 HEAD 提交哈希
+ * @param {function} [logger] - 诊断日志回调
+ * @returns {number} 更新的记录数
+ */
+function incrementalUpdate(repoDir, cacheDir, changedFiles, newHead, logger) {
+  const dbPath = resolveDbPath(cacheDir);
+  const db = new Database(dbPath);
+  db.pragma('journal_mode=WAL');
+  db.pragma('busy_timeout=5000');
+  db.pragma('foreign_keys = ON');
+
+  const deleteStmt = db.prepare('DELETE FROM memories WHERE file_path = ?');
+  const insertStmt = db.prepare(`
+    INSERT INTO memories (
+      id, kind, scope, project_id, agent_id,
+      content, summary, source_json, evidence_json,
+      confidence, importance, veracity, tags_json,
+      created_at, updated_at, valid_until, deleted_at, supersedes_json,
+      author, session, device, reviewer, reviewed_at, trust_tier,
+      file_path, line_no, repo_commit
+    ) VALUES (
+      @id, @kind, @scope, @project_id, @agent_id,
+      @content, @summary, @source_json, @evidence_json,
+      @confidence, @importance, @veracity, @tags_json,
+      @created_at, @updated_at, @valid_until, @deleted_at, @supersedes_json,
+      @author, @session, @device, @reviewer, @reviewed_at, @trust_tier,
+      @file_path, @line_no, @repo_commit
+    );
+  `);
+
+  let recordCount = 0;
+
+  const updateBatch = db.transaction((rows) => {
+    for (const row of rows) {
+      insertStmt.run(row);
+      recordCount += 1;
+    }
+  });
+
+  for (const relPath of changedFiles) {
+    const absPath = join(repoDir, relPath);
+
+    // 删除该文件的旧记录
+    deleteStmt.run(absPath);
+
+    // 检查文件是否还存在（可能已被删除）
+    if (!existsSync(absPath)) {
+      logger?.(`[mem-sync:index] update:deleted ${relPath}`);
+      continue;
+    }
+
+    // 重新索引该文件
+    const rows = indexFileToRows(absPath, newHead, logger);
+    if (rows.length > 0) {
+      updateBatch(rows);
+    }
+  }
+
+  // 重建 FTS 索引：外部内容 FTS5 要求全量 rebuild
+  db.exec("INSERT INTO memories_fts(memories_fts) VALUES('rebuild');");
+
+  // 更新 repo_head
+  db.prepare('INSERT OR REPLACE INTO index_meta (key, value) VALUES (?, ?)')
+    .run('repo_head', newHead);
+
+  db.close();
+  return recordCount;
+}
+
+/**
+ * 辅助函数：更新 index_meta 中的 repo_head 值。
+ * 用于无 JSONL 文件变更但 HEAD 变化的场景。
+ *
+ * @param {string} cacheDir - 索引数据库缓存目录
+ * @param {string} head - 新 HEAD 提交哈希
+ */
+function updateRepoHead(cacheDir, head) {
+  const dbPath = resolveDbPath(cacheDir);
+  const db = new Database(dbPath);
+  db.pragma('journal_mode=WAL');
+  db.pragma('busy_timeout=5000');
+
+  db.prepare('INSERT OR REPLACE INTO index_meta (key, value) VALUES (?, ?)')
+    .run('repo_head', head);
+
+  db.close();
+}
+
+/**
+ * 增量索引更新：检查 repo_head 是否变化，如有变化则增量更新。
+ *
+ * 当 HEAD 变化时：
+ * 1. 使用 git diff --name-only 获取变更文件列表
+ * 2. 仅对变更的 .jsonl 文件执行 DELETE + 重新插入
+ * 3. 检测已删除的文件，清理其记录
+ * 4. 更新 index_meta.repo_head
+ * 5. 如果 git diff 失败，回退到全量重建
+ *
+ * 返回值：
+ * - { skipped: true } — HEAD 未变化
+ * - { rebuilt: true, recordCount } — 全量重建（回退路径）
+ * - { updated: true, recordCount } — 增量更新成功
  */
 export function updateIndex(repoDir, cacheDir, options = {}) {
   const { logger, repoHead: explicitHead } = options;
@@ -1047,10 +1264,28 @@ export function updateIndex(repoDir, cacheDir, options = {}) {
     return { skipped: true };
   }
 
-  // repo_head 不匹配，执行全量重建
-  logger?.('[mem-sync:index] update:fallback HEAD changed, performing full rebuild');
-  const result = rebuildIndex(repoDir, cacheDir, options);
-  return { rebuilt: true, recordCount: result.recordCount };
+  // HEAD 变化 → 尝试增量更新
+  try {
+    const changedFiles = gitDiffFiles(status.repoHead, head, repoDir);
+    const jsonlFiles = changedFiles.filter(f => f.endsWith('.jsonl'));
+
+    if (jsonlFiles.length === 0) {
+      // 无 JSONL 文件变更，仅更新 HEAD
+      updateRepoHead(cacheDir, head);
+      logger?.('[mem-sync:index] update:head-only no JSONL changes, updated repo_head');
+      return { updated: true, recordCount: 0 };
+    }
+
+    // 增量更新变更的文件
+    const recordCount = incrementalUpdate(repoDir, cacheDir, jsonlFiles, head, logger);
+    logger?.(`[mem-sync:index] update:incremental updated ${recordCount} records from ${jsonlFiles.length} file(s)`);
+    return { updated: true, recordCount };
+  } catch (err) {
+    // git diff 失败 → 回退到全量重建
+    logger?.(`[mem-sync:index] update:fallback git diff failed: ${err.message}`);
+    const result = rebuildIndex(repoDir, cacheDir, options);
+    return { rebuilt: true, recordCount: result.recordCount };
+  }
 }
 
 // ─── 同步文件 I/O 辅助函数（已在上方定义）──────────────────────────
