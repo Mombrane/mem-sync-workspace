@@ -873,55 +873,114 @@ export function searchIndex(cacheDir, optionsOrQuery, legacyLimit) {
     // 当前 UTC 时间，用于过期检查
     const nowIso = new Date().toISOString();
 
-    // FTS5 MATCH 查询使用 BM25 排序：
-    // - JOIN memories_fts ON memories.rowid = memories_fts.rowid 建立关联
-    // - WHERE memories_fts MATCH @query 执行全文匹配
-    // - 结构化过滤条件仅在选项提供时激活（@param IS NULL OR ... 模式）
-    // - ORDER BY rank 按 BM25 相关性降序（rank 值越小越相关）
-    // - LIMIT 限制返回数量，避免结果集过大
-    const rows = db.prepare(`
-      SELECT m.*, f.rank
-      FROM memories_fts f
-      JOIN memories m ON m.rowid = f.rowid
-      WHERE memories_fts MATCH @query
-        AND (@scope IS NULL OR m.scope = @scope)
-        AND (@kind IS NULL OR m.kind = @kind)
-        AND (@projectId IS NULL OR m.project_id = @projectId)
-        AND (@agentId IS NULL OR m.agent_id = @agentId)
-        AND (@veracity IS NULL OR m.veracity = @veracity)
-        AND m.confidence >= @minConfidence
-        AND m.importance >= @minImportance
-        AND (@author IS NULL OR m.author = @author)
-        AND (@device IS NULL OR m.device = @device)
-        AND (@trustTier IS NULL OR m.trust_tier = @trustTier)
-        AND (@reviewer IS NULL OR m.reviewer = @reviewer)
-        ${excludeDeletedClause}
-        ${excludeExpiredClause}
-      ORDER BY rank
-      LIMIT @effectiveLimit
-    `).all({
-      query,
-      scope: scope ?? null,
-      kind: kind ?? null,
-      projectId: projectId ?? null,
-      agentId: agentId ?? null,
-      veracity: veracity ?? null,
-      minConfidence: minConfidence ?? 0,
-      minImportance: minImportance ?? 0,
-      author: author ?? null,
-      device: device ?? null,
-      trustTier: trustTier ?? null,
-      reviewer: reviewer ?? null,
-      nowIso,
-      effectiveLimit
-    });
+    // 检测短 CJK 查询：trigram 分词器需要至少 3 个连续字符才能生成 token。
+    // 1-2 个 CJK 字符的查询不会产生任何 trigram token，导致 MATCH 返回空结果。
+    // 对于此类查询，回退到 LIKE 查询（不走 FTS 虚拟表）。
+    const isShortCJK = (q) => {
+      const trimmed = q.trim();
+      if (trimmed.length >= 3) return false;
+      // 检查是否包含 CJK 字符（Unicode 范围：CJK 统一表意文字 4E00-9FFF，
+      // CJK 扩展 A 3400-4DBF，CJK 兼容表意文字 F900-FAFF）
+      return /[一-鿿㐀-䶿豈-﫿]/.test(trimmed);
+    };
 
-    results = rows.map(row => {
-      const record = mapRowToRecord(row);
-      // 附加 FTS5 BM25 排名到记录（用于 recall 输出格式化）
-      record._rank = row.rank;
-      return record;
-    });
+    if (isShortCJK(query)) {
+      // LIKE 回退：对 memories 表直接做 LIKE 查询。
+      // 不通过 FTS 虚拟表，因此无 BM25 排名——结果按 importance、confidence 降序排列。
+      const likeQuery = `%${query.trim()}%`;
+      const likeRows = db.prepare(`
+        SELECT m.*
+        FROM memories m
+        WHERE m.content LIKE @likeQuery
+          AND (@scope IS NULL OR m.scope = @scope)
+          AND (@kind IS NULL OR m.kind = @kind)
+          AND (@projectId IS NULL OR m.project_id = @projectId)
+          AND (@agentId IS NULL OR m.agent_id = @agentId)
+          AND (@veracity IS NULL OR m.veracity = @veracity)
+          AND m.confidence >= @minConfidence
+          AND m.importance >= @minImportance
+          AND (@author IS NULL OR m.author = @author)
+          AND (@device IS NULL OR m.device = @device)
+          AND (@trustTier IS NULL OR m.trust_tier = @trustTier)
+          AND (@reviewer IS NULL OR m.reviewer = @reviewer)
+          ${excludeDeletedClause}
+          ${excludeExpiredClause}
+        ORDER BY m.importance DESC, m.confidence DESC
+        LIMIT @effectiveLimit
+      `).all({
+        likeQuery,
+        scope: scope ?? null,
+        kind: kind ?? null,
+        projectId: projectId ?? null,
+        agentId: agentId ?? null,
+        veracity: veracity ?? null,
+        minConfidence: minConfidence ?? 0,
+        minImportance: minImportance ?? 0,
+        author: author ?? null,
+        device: device ?? null,
+        trustTier: trustTier ?? null,
+        reviewer: reviewer ?? null,
+        nowIso,
+        effectiveLimit
+      });
+
+      results = likeRows.map(row => {
+        const record = mapRowToRecord(row);
+        // LIKE 回退无 BM25 排名；设为 0 表示等权（后续质量排序仍然生效）
+        record._rank = 0;
+        return record;
+      });
+    } else {
+      // FTS5 MATCH 查询使用 BM25 排序：
+      // - JOIN memories_fts ON memories.rowid = memories_fts.rowid 建立关联
+      // - WHERE memories_fts MATCH @query 执行全文匹配
+      // - 结构化过滤条件仅在选项提供时激活（@param IS NULL OR ... 模式）
+      // - ORDER BY rank 按 BM25 相关性降序（rank 值越小越相关）
+      // - LIMIT 限制返回数量，避免结果集过大
+      const rows = db.prepare(`
+        SELECT m.*, f.rank
+        FROM memories_fts f
+        JOIN memories m ON m.rowid = f.rowid
+        WHERE memories_fts MATCH @query
+          AND (@scope IS NULL OR m.scope = @scope)
+          AND (@kind IS NULL OR m.kind = @kind)
+          AND (@projectId IS NULL OR m.project_id = @projectId)
+          AND (@agentId IS NULL OR m.agent_id = @agentId)
+          AND (@veracity IS NULL OR m.veracity = @veracity)
+          AND m.confidence >= @minConfidence
+          AND m.importance >= @minImportance
+          AND (@author IS NULL OR m.author = @author)
+          AND (@device IS NULL OR m.device = @device)
+          AND (@trustTier IS NULL OR m.trust_tier = @trustTier)
+          AND (@reviewer IS NULL OR m.reviewer = @reviewer)
+          ${excludeDeletedClause}
+          ${excludeExpiredClause}
+        ORDER BY rank
+        LIMIT @effectiveLimit
+      `).all({
+        query,
+        scope: scope ?? null,
+        kind: kind ?? null,
+        projectId: projectId ?? null,
+        agentId: agentId ?? null,
+        veracity: veracity ?? null,
+        minConfidence: minConfidence ?? 0,
+        minImportance: minImportance ?? 0,
+        author: author ?? null,
+        device: device ?? null,
+        trustTier: trustTier ?? null,
+        reviewer: reviewer ?? null,
+        nowIso,
+        effectiveLimit
+      });
+
+      results = rows.map(row => {
+        const record = mapRowToRecord(row);
+        // 附加 FTS5 BM25 排名到记录（用于 recall 输出格式化）
+        record._rank = row.rank;
+        return record;
+      });
+    }
 
     results = excludeSuperseded(results);
 

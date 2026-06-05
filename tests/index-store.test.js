@@ -1201,3 +1201,105 @@ test('searchIndex combines provenance filters with existing filters', async () =
     await rm(cacheDir, { recursive: true, force: true });
   }
 });
+
+// ─── REQ-021: FTS5 trigram CJK 短查询 LIKE 回退 ──────────────────────
+
+test('searchIndex returns results for 2-char CJK query via LIKE fallback', async () => {
+  const repoDir = await tempDir('search-cjk2');
+  const cacheDir = await tempDir('search-cjk2-cache');
+
+  try {
+    const records = [
+      makeRecord({ id: 'mem_cjk2', content: '用户测试数据' }),
+      makeRecord({ id: 'mem_other', content: 'Python 脚本示例' })
+    ];
+    await writeJSONLFile(repoDir, 'memories.jsonl', records);
+    rebuildIndex(repoDir, cacheDir, { repoHead: 'cjk2-test' });
+
+    // "测试" 是 2 个 CJK 字符，trigram 分词器无法生成 token，应回退到 LIKE
+    const results = searchIndex(cacheDir, { query: '测试', limit: 10 });
+    assert.ok(results.length >= 1, '2-char CJK query should return results via LIKE fallback');
+    assert.ok(results.some(r => r.id === 'mem_cjk2'), 'should contain the CJK record');
+    // _rank 应为 0（LIKE 回退无 BM25 排名）
+    const cjkResult = results.find(r => r.id === 'mem_cjk2');
+    assert.equal(cjkResult._rank, 0, 'LIKE fallback should set _rank to 0');
+  } finally {
+    await rm(repoDir, { recursive: true, force: true });
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test('searchIndex returns results for single CJK char query via LIKE fallback', async () => {
+  const repoDir = await tempDir('search-cjk1');
+  const cacheDir = await tempDir('search-cjk1-cache');
+
+  try {
+    const records = [
+      makeRecord({ id: 'mem_cjk1', content: '测试' }),
+      makeRecord({ id: 'mem_other2', content: 'unrelated content here' })
+    ];
+    await writeJSONLFile(repoDir, 'memories.jsonl', records);
+    rebuildIndex(repoDir, cacheDir, { repoHead: 'cjk1-test' });
+
+    // "测" 是 1 个 CJK 字符，trigram 分词器无法生成 token，应回退到 LIKE
+    const results = searchIndex(cacheDir, { query: '测', limit: 10 });
+    assert.ok(results.length >= 1, '1-char CJK query should return results via LIKE fallback');
+    assert.ok(results.some(r => r.id === 'mem_cjk1'), 'should contain the CJK record');
+    // _rank 应为 0（LIKE 回退无 BM25 排名）
+    const cjkResult = results.find(r => r.id === 'mem_cjk1');
+    assert.equal(cjkResult._rank, 0, 'LIKE fallback should set _rank to 0');
+  } finally {
+    await rm(repoDir, { recursive: true, force: true });
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test('searchIndex uses normal FTS path for 3+ char CJK query', async () => {
+  const repoDir = await tempDir('search-cjk3');
+  const cacheDir = await tempDir('search-cjk3-cache');
+
+  try {
+    const records = [
+      makeRecord({ id: 'mem_cjk3', content: '测试数据内容' }),
+      makeRecord({ id: 'mem_other3', content: 'Python 脚本示例' })
+    ];
+    await writeJSONLFile(repoDir, 'memories.jsonl', records);
+    rebuildIndex(repoDir, cacheDir, { repoHead: 'cjk3-test' });
+
+    // "测试数据" 是 4 个 CJK 字符，应走正常 FTS MATCH 路径
+    const results = searchIndex(cacheDir, { query: '测试数据', limit: 10 });
+    assert.ok(results.length >= 1, '4-char CJK query should return results via FTS');
+    assert.ok(results.some(r => r.id === 'mem_cjk3'), 'should contain the CJK record');
+    // FTS 路径应有非零 _rank
+    const cjkResult = results.find(r => r.id === 'mem_cjk3');
+    assert.notEqual(cjkResult._rank, undefined, 'FTS path should have _rank defined');
+  } finally {
+    await rm(repoDir, { recursive: true, force: true });
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test('searchIndex returns results for 2-char CJK query with filters', async () => {
+  const repoDir = await tempDir('search-cjk-filt');
+  const cacheDir = await tempDir('search-cjk-filt-cache');
+
+  try {
+    const records = [
+      makeRecord({ id: 'mem_cjk_a', content: '用户测试数据', scope: 'user', kind: 'episode', confidence: 0.9, importance: 0.8 }),
+      makeRecord({ id: 'mem_cjk_b', content: '系统测试记录', scope: 'project', kind: 'project_fact', confidence: 0.5, importance: 0.3 }),
+      makeRecord({ id: 'mem_cjk_c', content: 'other content', scope: 'user', kind: 'episode', confidence: 0.9, importance: 0.8 })
+    ];
+    await writeJSONLFile(repoDir, 'memories.jsonl', records);
+    rebuildIndex(repoDir, cacheDir, { repoHead: 'cjk-filt-test' });
+
+    // LIKE 回退应尊重 scope 过滤
+    const results = searchIndex(cacheDir, { query: '测试', scope: 'user', limit: 10 });
+    assert.ok(results.length >= 1, 'should return results');
+    assert.ok(results.every(r => r.scope === 'user'), 'all results should match scope filter');
+    assert.ok(results.some(r => r.id === 'mem_cjk_a'), 'should contain the user-scoped CJK record');
+    assert.ok(!results.some(r => r.id === 'mem_cjk_b'), 'should not contain project-scoped record');
+  } finally {
+    await rm(repoDir, { recursive: true, force: true });
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
