@@ -288,27 +288,27 @@ export async function generateKeypair(keyPath) {
  * @throws {Error} 不支持的加密模式或加密失败时抛出
  */
 export async function encryptLine(plaintext, config) {
+  // Validate mode FIRST — before checking for age binary
+  if (config.mode === 'password') {
+    throw new Error('password mode not yet implemented in encryptLine');
+  }
+  if (config.mode !== 'age') {
+    throw new Error(`unsupported encryption mode: ${config.mode}`);
+  }
+
   const agePath = await getAgeBinary();
   if (!agePath) {
     throw new Error('age binary not found — install age (age-encryption.org)');
   }
 
-  if (config.mode === 'password') {
-    throw new Error('password mode not yet implemented in encryptLine');
+  if (!config.publicKeys || config.publicKeys.length === 0) {
+    throw new Error('no public key provided for age encryption');
   }
-
-  if (config.mode === 'age') {
-    if (!config.publicKeys || config.publicKeys.length === 0) {
-      throw new Error('no public key provided for age encryption');
-    }
-    // -a/--armor 输出 PEM 格式（纯 ASCII），确保加密内容可安全存储在 JSONL 文本文件中
-    const stdout = await execFileWithOutput(agePath, ['-a', '-r', config.publicKeys[0]], {
-      input: plaintext
-    });
-    return stdout;
-  }
-
-  throw new Error(`unsupported encryption mode: ${config.mode}`);
+  // -a/--armor 输出 PEM 格式（纯 ASCII），确保加密内容可安全存储在 JSONL 文本文件中
+  const stdout = await execFileWithOutput(agePath, ['-a', '-r', config.publicKeys[0]], {
+    input: plaintext
+  });
+  return stdout;
 }
 
 /**
@@ -327,26 +327,26 @@ export async function encryptLine(plaintext, config) {
  * @throws {Error} 解密失败或配置无效时抛出
  */
 export async function decryptLine(ciphertext, config) {
+  // Validate mode FIRST — before checking for age binary
+  if (config.mode === 'password') {
+    throw new Error('password mode not yet implemented in decryptLine');
+  }
+  if (config.mode !== 'age') {
+    throw new Error(`unsupported encryption mode: ${config.mode}`);
+  }
+
   const agePath = await getAgeBinary();
   if (!agePath) {
     throw new Error('age binary not found — install age (age-encryption.org)');
   }
 
-  if (config.mode === 'password') {
-    throw new Error('password mode not yet implemented in decryptLine');
+  if (!config.privateKeyPath) {
+    throw new Error('no private key path provided for age decryption');
   }
-
-  if (config.mode === 'age') {
-    if (!config.privateKeyPath) {
-      throw new Error('no private key path provided for age decryption');
-    }
-    const stdout = await execFileWithOutput(agePath, ['-d', '-i', config.privateKeyPath], {
-      input: ciphertext
-    });
-    return stdout;
-  }
-
-  throw new Error(`unsupported encryption mode: ${config.mode}`);
+  const stdout = await execFileWithOutput(agePath, ['-d', '-i', config.privateKeyPath], {
+    input: ciphertext
+  });
+  return stdout;
 }
 
 /**
@@ -360,21 +360,25 @@ export async function decryptLine(ciphertext, config) {
  * @returns {string} 解密后的明文
  */
 export function decryptLineSync(ciphertext, config) {
+  // Validate mode FIRST — before checking for age binary
+  if (config.mode === 'password') {
+    throw new Error('password mode not yet implemented in decryptLineSync');
+  }
+  if (config.mode !== 'age') {
+    throw new Error(`unsupported encryption mode: ${config.mode}`);
+  }
+
   const agePath = resolveBinarySync(AGE_BINARY_CANDIDATES);
   if (!agePath) {
     throw new Error('age binary not found — install age (age-encryption.org)');
   }
 
-  if (config.mode === 'age') {
-    if (!config.privateKeyPath) {
-      throw new Error('no private key path provided for age decryption');
-    }
-    return execFileSync(agePath, ['-d', '-i', config.privateKeyPath], {
-      input: ciphertext,
-      encoding: 'utf8',
-      maxBuffer: 10 * 1024 * 1024
-    });
+  if (!config.privateKeyPath) {
+    throw new Error('no private key path provided for age decryption');
   }
-
-  throw new Error(`unsupported encryption mode: ${config.mode}`);
+  return execFileSync(agePath, ['-d', '-i', config.privateKeyPath], {
+    input: ciphertext,
+    encoding: 'utf8',
+    maxBuffer: 10 * 1024 * 1024
+  });
 }

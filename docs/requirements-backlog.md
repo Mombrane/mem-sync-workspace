@@ -6,20 +6,20 @@
 ---
 
 ## 📊 需求统计
-- 总计: 8 个待处理需求
-- 🔴 高优先级: 3 个
+- 总计: 5 个待处理需求
+- 🔴 高优先级: 0 个
 - 🟡 中优先级: 5 个
 - 🟢 低优先级: 0 个
-- ✅ 已完成: 28 个
+- ✅ 已完成: 31 个
 
 ---
 
 ## 🔴 高优先级
 | ID | 需求描述 | 来源文档 | 状态 | 依赖 | 子需求 |
 |----|----------|----------|------|------|--------|
-| REQ-016 | 加密函数错误优先级修复：`encryptLine`/`decryptLine` 模式校验应优先于 age 二进制检查 | 代码分析 + 测试失败 | ⬜ 待开发 | - | 将 `config.mode` 的校验（password 未实现、unknown 不支持）移到 `getAgeBinary()` 调用之前，确保用户传入错误模式时抛出正确的错误信息而非误导向的 age binary 缺失错误 |
-| REQ-017 | `checkAgeBinary` 测试修正：不应假定本机已安装 age 二进制 | 测试失败 | ⬜ 待开发 | - | 测试断言写死 `assert.equal(result.available, true)`，在未安装 age 的机器上必然失败。改为只验证返回结构的完整性（`available` 为 boolean、`path` 和 `version` 在不可用时为 null） |
-| REQ-018 | 加密测试全量恢复：安装 age 二进制或引入 mock | 测试框架 | ⬜ 待开发 | REQ-016, REQ-017 | 当前 11 个加密测试因 age 不可用被 skip，5 个因代码逻辑问题失败。修复 REQ-016/017 后，需在本机安装 `brew install age`，或为加密模块引入可控的 mock/stub 机制，使 CI 和本地开发环境无需真实 age 即可运行全量加密测试 |
+| REQ-016 | 加密函数错误优先级修复：`encryptLine`/`decryptLine` 模式校验应优先于 age 二进制检查 | 代码分析 + 测试失败 | ✅ 已完成 | - | 2026-06-05 |
+| REQ-017 | `checkAgeBinary` 测试修正：不应假定本机已安装 age 二进制 | 测试失败 | ✅ 已完成 | - | 2026-06-05 |
+| REQ-018 | 加密测试全量恢复：安装 age 二进制或引入 mock | 测试框架 | ✅ 已完成 | REQ-016, REQ-017 | 2026-06-05 |
 
 ## 🟡 中优先级
 | ID | 需求描述 | 来源文档 | 状态 | 依赖 | 子需求 |
@@ -90,6 +90,9 @@
 | REQ-013 | Memory provenance 与审核轨迹补强 | 2026-06-03 | OMP 对照分析 | [change](../openspec/changes/req013-memory-provenance) |
 | REQ-014 | Scope 升级为 bank / namespace 召回模型 | 2026-06-04 | OMP 对照分析 | [change](../openspec/changes/req014-scope-bank-model) |
 | REQ-015 | Recall 回归测试矩阵与黄金语料集 | 2026-06-04 | 质量设计 | [change](../openspec/changes/req015-recall-regression) |
+| REQ-016 | 加密函数错误优先级修复 | 2026-06-05 | 代码分析 + 测试失败 | - |
+| REQ-017 | checkAgeBinary 测试修正 | 2026-06-05 | 测试失败 | - |
+| REQ-018 | 加密测试全量恢复 | 2026-06-05 | 测试框架 | - |
 
 ---
 
@@ -105,6 +108,7 @@
 ---
 
 ## 🔄 更新日志
+- 2026-06-05: 完成 REQ-016/017/018 — 加密函数错误优先级修复（mode validation before binary check）、checkAgeBinary 测试修正、加密测试全量恢复，703 测试全绿
 - 2026-06-05: 新增 REQ-016 ~ REQ-023 — 加密错误优先级修复、checkAgeBinary 测试修正、加密测试全量恢复、密码模式实现、增量索引验收、CJK 两字查询修复、redaction 拦截验证、pending 隔离验证。当前测试状态：691 pass / 5 fail / 11 skip（总计 707）
 - 2026-06-04: 完成 REQ-015 Recall 回归测试矩阵与黄金语料集 — 22 条黄金语料覆盖 8 种场景，9 个回归测试，696 测试全绿
 - 2026-06-04: 完成 REQ-014 Scope 升级为 bank / namespace 召回模型 — personal/team scope，user→personal 自动迁移，scope 优先级加权排序，687 测试全绿

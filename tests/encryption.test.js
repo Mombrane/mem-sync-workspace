@@ -10,7 +10,8 @@ import {
   checkAgeBinary,
   generateKeypair,
   encryptLine,
-  decryptLine
+  decryptLine,
+  decryptLineSync
 } from '../src/encryption.js';
 
 /**
@@ -137,10 +138,14 @@ test('checkAgeBinary returns availability info', async () => {
   const result = await checkAgeBinary();
   assert.ok(result);
   assert.equal(typeof result.available, 'boolean');
-  // 本机已安装 age，应返回可用
-  assert.equal(result.available, true);
-  assert.ok(result.path);
-  assert.ok(result.version);
+  // Verify return structure: available is always a boolean
+  if (result.available) {
+    assert.ok(typeof result.path === 'string' && result.path.length > 0);
+    assert.ok(typeof result.version === 'string');
+  } else {
+    assert.equal(result.path, null);
+    assert.equal(result.version, null);
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -283,5 +288,58 @@ test('decryptLine throws for unknown mode', async () => {
   await assert.rejects(
     () => decryptLine('data', { mode: 'unknown' }),
     /unsupported encryption mode: unknown/
+  );
+});
+
+// ---------------------------------------------------------------------------
+// REQ-018: 错误优先级测试 — 模式验证应先于二进制检查
+// ---------------------------------------------------------------------------
+
+test('encryptLine mode validation occurs before binary check', async () => {
+  await assert.rejects(
+    () => encryptLine('data', { mode: 'password' }),
+    /password mode not yet implemented/
+  );
+});
+
+test('decryptLine mode validation occurs before binary check', async () => {
+  await assert.rejects(
+    () => decryptLine('data', { mode: 'password' }),
+    /password mode not yet implemented/
+  );
+});
+
+test('decryptLineSync mode validation occurs before binary check', () => {
+  assert.throws(
+    () => decryptLineSync('data', { mode: 'password' }),
+    /password mode not yet implemented/
+  );
+});
+
+test('encryptLine unknown mode validation occurs before binary check', async () => {
+  await assert.rejects(
+    () => encryptLine('data', { mode: 'unknown' }),
+    /unsupported encryption mode: unknown/
+  );
+});
+
+test('decryptLine unknown mode validation occurs before binary check', async () => {
+  await assert.rejects(
+    () => decryptLine('data', { mode: 'unknown' }),
+    /unsupported encryption mode: unknown/
+  );
+});
+
+test('decryptLineSync unknown mode validation occurs before binary check', () => {
+  assert.throws(
+    () => decryptLineSync('data', { mode: 'unknown' }),
+    /unsupported encryption mode: unknown/
+  );
+});
+
+test('decryptLineSync throws for password mode (not implemented)', () => {
+  assert.throws(
+    () => decryptLineSync('data', { mode: 'password' }),
+    /password mode not yet implemented in decryptLineSync/
   );
 });
