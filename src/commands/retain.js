@@ -101,6 +101,14 @@ export async function retainCommand(args) {
   // 合并 LLM 提取的记录（已规范化）
   for (const llmRecord of llmRecords) {
     // LLM 记录也可能需要去重，通过 canonicalKey 处理
+    if (!options.skipRedaction) {
+      const redactResult = redactContent(llmRecord.content);
+      if (redactResult.blocked) {
+        const matchedRules = redactResult.matches.map(m => m.rule).join(', ');
+        console.error(`[mem-sync:redact] blocked LLM candidate: ${matchedRules}`);
+        continue;
+      }
+    }
     records.push(llmRecord);
   }
 

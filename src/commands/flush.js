@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { resolveStorePath } from '../repo-store.js';
+import { resolveStorePath, readJSONL } from '../repo-store.js';
+import { redactContent } from '../redaction-engine.js';
 import { acquireLock, releaseLock, LockTimeoutError } from '../lock.js';
 import {
   ensureClone,
@@ -51,6 +52,8 @@ export async function flushCommand(args) {
       : null;
   // 解析 --compact 参数
   const compactFlag = args.includes('--compact');
+  // 解析 --skip-redaction 参数
+  const skipRedaction = args.includes('--skip-redaction');
 
   // 结果对象
   const result = {
@@ -162,6 +165,30 @@ export async function flushCommand(args) {
         console.error(`[mem-sync:flush] compact:warning — ${err.message}`);
         // Compact is best-effort; flush should still succeed
       }
+    }
+
+    // ── Step 4.8: Redaction gate ──────────────────────────────
+    if (!skipRedaction && mergeResult.merged > 0) {
+      console.error('[mem-sync:flush] redaction:scanning');
+      const storeRecords = await readJSONL(storePath);
+      const blockedRecords = [];
+      for (const record of storeRecords) {
+        if (!record.content) continue;
+        const redactResult = redactContent(record.content);
+        if (redactResult.blocked) {
+          blockedRecords.push({ id: record.id, rules: redactResult.matches.map(m => m.rule) });
+        }
+      }
+      if (blockedRecords.length > 0) {
+        for (const br of blockedRecords) {
+          console.error(`[mem-sync:redact] blocked record ${br.id}: ${br.rules.join(', ')}`);
+        }
+        console.error(`[mem-sync:flush] redaction:blocked ${blockedRecords.length} records, commit aborted`);
+        result.redaction = { blocked: true, count: blockedRecords.length, records: blockedRecords };
+        process.exitCode = 1;
+        return;
+      }
+      console.error('[mem-sync:flush] redaction:clean');
     }
 
     // ── Step 5: Commit and push ──────────────────────────────────
