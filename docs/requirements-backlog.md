@@ -6,11 +6,11 @@
 ---
 
 ## 📊 需求统计
-- 总计: 4 个待处理需求
+- 总计: 3 个待处理需求
 - 🔴 高优先级: 0 个
-- 🟡 中优先级: 4 个
+- 🟡 中优先级: 3 个
 - 🟢 低优先级: 0 个
-- ✅ 已完成: 32 个
+- ✅ 已完成: 33 个
 
 ---
 
@@ -24,7 +24,7 @@
 ## 🟡 中优先级
 | ID | 需求描述 | 来源文档 | 状态 | 依赖 | 子需求 |
 |----|----------|----------|------|------|--------|
-| REQ-019 | 密码加密模式（password mode）实现 | SKILL.md + memcli-design.md | ⬜ 待开发 | REQ-016 | `SKILL.md` 初始化流程和 CLI 帮助文本已将 `--encrypt --password` 列为选项，但 `encryptLine`/`decryptLine` 中密码模式抛出 `not yet implemented`。需完整实现 password-based age encryption（使用 `age -p` / `age -d` 配合密码通过 stdin 传入） |
+| REQ-019 | 密码加密模式（password mode）实现 | SKILL.md + memcli-design.md | ✅ 已完成 | REQ-016 | 2026-06-05 |
 | REQ-020 | 增量索引更新验收：确认 updateIndex 使用 git diff 增量而非全量 rebuild | memcli-design.md §8.2 | ⬜ 待验证 | - | 设计文档描述增量更新流程为 `git diff --name-only last..current` 只重建变更文件，但当前 `updateIndex` 可能在 HEAD 变化时 fallback 到全量 rebuild。需阅读代码确认实际行为，若为全量则实现真增量逻辑，并补充针对性测试 |
 | REQ-021 | FTS5 trigram CJK 两字查询修复 | remember-recall-design.md §5.6 | ✅ 已完成 | - | 2026-06-05 |
 | REQ-022 | Redaction 拦截验证：确认 flush 流程对 redaction 命中的阻断行为 | memcli-design.md §13 + §17 | ⬜ 待验证 | - | 设计文档声明 write path 在写入 GitHub 前须经过 secret detector + redaction rules 拦截。当前 redaction 在 remember/retain 中有拦截，但需确认 flush 合并 pending 到 store 时是否也执行 redaction 检查，以及检查命中时能否阻止 commit/push |
@@ -94,6 +94,7 @@
 | REQ-017 | checkAgeBinary 测试修正 | 2026-06-05 | 测试失败 | - |
 | REQ-018 | 加密测试全量恢复 | 2026-06-05 | 测试框架 | - |
 | REQ-021 | FTS5 trigram CJK 两字查询修复 | 2026-06-05 | remember-recall-design.md | - |
+| REQ-019 | 密码加密模式（password mode）实现 | 2026-06-05 | SKILL.md + memcli-design.md | - |
 
 ---
 
@@ -109,6 +110,7 @@
 ---
 
 ## 🔄 更新日志
+- 2026-06-05: 完成 REQ-019 密码加密模式实现 — age-encryption JS 库 passphrase 加密/解密，MEM_SYNC_PASSWORD 环境变量，709 测试全绿
 - 2026-06-05: 完成 REQ-021 FTS5 trigram CJK 两字查询修复 — LIKE fallback for short CJK queries，4 新测试，707 测试全绿
 - 2026-06-05: 完成 REQ-016/017/018 — 加密函数错误优先级修复（mode validation before binary check）、checkAgeBinary 测试修正、加密测试全量恢复，703 测试全绿
 - 2026-06-05: 新增 REQ-016 ~ REQ-023 — 加密错误优先级修复、checkAgeBinary 测试修正、加密测试全量恢复、密码模式实现、增量索引验收、CJK 两字查询修复、redaction 拦截验证、pending 隔离验证。当前测试状态：691 pass / 5 fail / 11 skip（总计 707）
